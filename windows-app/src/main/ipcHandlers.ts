@@ -13,7 +13,7 @@ import {
   getImages,
   deleteImage,
 } from './database.js';
-import { sync, login, register, getSyncStatus, onStatusChange } from './syncService.js';
+import { sync, login, register, getSyncStatus, onStatusChange, onJournalsChanged } from './syncService.js';
 import { checkBiometricAvailability, verifyBiometric } from './biometric.js';
 import { chatWithLLM } from './llmService.js';
 import type { ChatMessage } from '../shared/types.js';
@@ -87,6 +87,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   onStatusChange((status) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sync:on-status-change', status);
+    }
+  });
+
+  // Tell the renderer to reload its journal list after a sync pulls new data
+  onJournalsChanged(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('journal:changed');
     }
   });
 

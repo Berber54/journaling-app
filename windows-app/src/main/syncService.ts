@@ -12,9 +12,17 @@ import type { AuthResponse, SyncRequest, SyncResponse, SyncStatus } from '../sha
 
 let isSyncing = false;
 let statusCallback: ((status: SyncStatus) => void) | null = null;
+let journalsChangedCallback: (() => void) | null = null;
 
 export function onStatusChange(callback: (status: SyncStatus) => void): void {
   statusCallback = callback;
+}
+
+// Fired after a sync pulls entries down from the server so the renderer can
+// re-query its local DB. Without this, entries created on another device (or
+// pulled on first login) wouldn't appear in the UI until the app restarts.
+export function onJournalsChanged(callback: () => void): void {
+  journalsChangedCallback = callback;
 }
 
 function emitStatus(): void {
@@ -189,6 +197,12 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
     console.log(`[sync] Complete: sent=${result.sent}, received=${result.received}, conflicts=${result.conflicts}`);
     isSyncing = false;
     emitStatus();
+
+    // If the server sent entries down, tell the renderer to reload its list.
+    if (result.received > 0 && journalsChangedCallback) {
+      journalsChangedCallback();
+    }
+
     return { success: true, message: `Synced: ${result.sent} sent, ${result.received} received` };
   } catch (err: any) {
     console.error('[sync] Failed:', err.message);
@@ -241,6 +255,10 @@ export async function register(serverUrl: string, username: string, password: st
   setConfig('auth_token', data.token);
   setConfig('auth_user_id', data.userId);
   setConfig('username', username);
+
+  // Push any entries written before the account existed (and pull anything the
+  // server already has for this account).
+  setTimeout(() => sync().catch(console.error), 500);
 
   return data;
 }

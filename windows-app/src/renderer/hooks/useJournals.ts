@@ -13,6 +13,13 @@ export function useJournals() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Reload when a background sync pulls entries from the server (e.g. changes
+  // made on another device, or the initial pull right after login).
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onJournalsChanged(() => { refresh(); });
+    return unsubscribe;
+  }, [refresh]);
+
   const create = useCallback(async (data: { title: string; content: string; journal_date: string }) => {
     const entry = await window.electronAPI.journalCreate(data);
     setEntries(prev => [entry, ...prev]);
