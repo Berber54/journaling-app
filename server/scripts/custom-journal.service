@@ -1,0 +1,26 @@
+[Unit]
+Description=Custom Journal Sync Server
+After=network.target
+Documentation=https://github.com/your-user/custom-journal
+
+[Service]
+Type=simple
+User=journal
+Group=journal
+WorkingDirectory=/opt/custom-journal
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+Environment=PORT=3377
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/custom-journal/data /opt/custom-journal/logs
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
