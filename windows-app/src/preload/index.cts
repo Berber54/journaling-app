@@ -8,6 +8,11 @@ const electronAPI: ElectronAPI = {
   journalCreate: (entry) => ipcRenderer.invoke('journal:create', entry),
   journalUpdate: (id, updates) => ipcRenderer.invoke('journal:update', id, updates),
   journalDelete: (id) => ipcRenderer.invoke('journal:delete', id),
+  onJournalsChanged: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('journal:changed', handler);
+    return () => ipcRenderer.removeListener('journal:changed', handler);
+  },
 
   // ─── Images ────────────────────────────────────────────────
   imageAdd: (journalId: string, data: string) => ipcRenderer.invoke('image:add', journalId, data),

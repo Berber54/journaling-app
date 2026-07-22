@@ -8,8 +8,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRouter } from './routes/auth.js';
 import { healthRouter } from './routes/health.js';
 import { journalsRouter } from './routes/journals.js';
-
-// import { syncRouter } from './routes/sync.js';
+import { syncRouter } from './routes/sync.js';
 
 const app = express();
 
@@ -27,7 +26,7 @@ app.use(requestLogger);
 app.use('/api/auth', authRouter);
 app.use('/api/journals', journalsRouter);
 app.use('/api/health', healthRouter);
-// app.use('/api/sync', syncRouter);
+app.use('/api/sync', syncRouter);
 
 app.use(errorHandler);
 

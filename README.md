@@ -12,7 +12,10 @@ A private, offline-first journaling app that syncs across all your devices via a
 - **Offline-First** — Write anytime, anywhere. Entries sync when you're back online
 - **Self-Hosted Sync** — Your Raspberry Pi is the server. Your data never leaves your network
 - **Instant Lock** — Hotkey lock (Alt+L / Cmd+L), auto-lock on focus loss and minimize
-- **PIN Protection** — 6-digit PIN with bcrypt hashing. No content visible when locked
+- **Passphrase Protection** — Any-character passphrase (min 6 chars), bcrypt-hashed. No content visible when locked
+- **Windows Hello** — Optional fingerprint / face / device-PIN unlock (Windows)
+- **Rich-Text Editor** — Bold, italic, underline, text colors, and inline images
+- **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (bring your own API key)
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
 - **Dark Theme** — Premium dark UI with glassmorphism, micro-animations, and Inter font
@@ -41,8 +44,9 @@ A private, offline-first journaling app that syncs across all your devices via a
 |-------|-----------|
 | Server | Node.js 20 LTS, Express, SQLite (better-sqlite3) |
 | Desktop Apps | Electron 33, React 19, TypeScript 5 |
-| Auth | JWT (RS256, 24h expiry) + bcrypt |
+| Auth | JWT (HS256, 24h expiry, refreshable) + bcrypt |
 | Sync | Offline-first, last-write-wins conflict resolution |
+| AI | OpenAI Chat Completions (key stored locally, never synced) |
 | Bundler | Vite 6 |
 | Packaging | electron-builder (NSIS / DMG / AppImage+deb) |
 
@@ -147,13 +151,15 @@ npm run package          # Creates installer in dist-electron/
 
 | Feature | Implementation |
 |---------|---------------|
-| Local PIN | bcrypt-hashed (12 rounds), stored in local SQLite |
+| Local passphrase | Any-character passphrase (min 6), bcrypt-hashed (12 rounds), stored in local SQLite |
+| Biometric unlock | Windows Hello via WinRT `UserConsentVerifier` (opt-in; passphrase always remains a fallback) |
 | Lock triggers | Alt+L / Cmd+L hotkey, window blur, window minimize |
 | Lock screen | Full-window overlay with `backdrop-filter: blur(20px)` — no content leaks |
-| Server auth | JWT with 24h expiry, auto-refresh on 401 |
+| Server auth | JWT (HS256) with 24h expiry, auto-refresh on 401 (a recently-expired token can be exchanged for a new one) |
 | Password storage | bcrypt (12 rounds) on server |
-| Context isolation | Electron contextIsolation + disabled nodeIntegration |
+| Context isolation | Electron contextIsolation on + nodeIntegration off; renderer talks to the OS only through a locked-down preload bridge |
 | Data at rest | Local SQLite in Electron's userData directory |
+| OpenAI key | Stored locally in the client's SQLite `app_config`, sent only to OpenAI — never to the sync server |
 
 ---
 
@@ -162,11 +168,11 @@ npm run package          # Creates installer in dist-electron/
 - **Strategy**: Offline-first with last-write-wins conflict resolution
 - **Comparison key**: `updated_at` timestamp (ISO 8601 UTC)
 - **Sync triggers**:
-  1. After each save (debounced 3 seconds)
-  2. On network reconnect
+  1. After each create / edit / delete (debounced 3 seconds)
+  2. On network reconnect (and once at startup as soon as the server is reachable)
   3. Every 5 minutes (background)
   4. Manual "Sync Now" button
-  5. On app startup after unlock
+  5. Right after login or account registration
 
 When offline, all changes are saved locally with `synced=0`. When the network returns, pending entries are automatically pushed to the server. If a conflict exists (same entry edited on two devices), the version with the later `updated_at` wins.
 
@@ -213,7 +219,7 @@ When offline, all changes are saved locally with `synced=0`. When the network re
 | DELETE | `/journals/:id` | Yes | Soft-delete entry |
 | POST | `/sync` | Yes | Bidirectional sync |
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) §6 for full request/response schemas.
+See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, and §8 for the sync protocol.
 
 ---
 
@@ -224,13 +230,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §6 for full request/response schemas.
 - [x] Windows desktop app
 - [x] macOS desktop app
 - [x] Linux desktop app
+- [x] Rich-text editor with formatting toolbar (bold/italic/underline/color)
+- [x] Inline image attachments (stored locally)
+- [x] AI assistant over your entries (OpenAI, bring-your-own-key)
+- [x] Windows Hello biometric unlock
 - [ ] iPhone app (React Native or native Swift)
-- [ ] Rich text / Markdown editor with formatting toolbar
+- [ ] Sync image attachments to the server (currently local-only)
 - [ ] Journal search (full-text search via SQLite FTS5)
 - [ ] Journal tags / categories
 - [ ] Export to PDF / Markdown files
 - [ ] End-to-end encryption (AES-256-GCM)
-- [ ] Attachment support (images, voice memos)
+- [ ] Voice memo attachments
 
 ---
 

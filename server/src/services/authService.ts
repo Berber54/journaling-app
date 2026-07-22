@@ -69,8 +69,19 @@ export async function loginUser(username: string, password: string): Promise<Aut
   return { token, userId: user.id, expiresAt };
 }
 
-export function refreshToken(userId: string): AuthResponse {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+// Issues a fresh token from an existing one. Crucially, the incoming token is
+// verified with `ignoreExpiration: true` so a *recently expired* token can still
+// be exchanged — this is what makes the client's "auto-refresh on 401" work.
+// (A token with a bad signature is still rejected.)
+export function refreshToken(rawToken: string): AuthResponse {
+  let payload: { userId: string };
+  try {
+    payload = jwt.verify(rawToken, config.jwtSecret, { ignoreExpiration: true }) as { userId: string };
+  } catch {
+    throw new AppError(401, 'INVALID_TOKEN', 'Token is invalid');
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.userId) as UserRow | undefined;
   if (!user) {
     throw new AppError(401, 'UNAUTHORIZED', 'User no longer exists');
   }

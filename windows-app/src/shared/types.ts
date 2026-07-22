@@ -77,6 +77,8 @@ export interface ElectronAPI {
   journalCreate: (entry: { title: string; content: string; journal_date: string }) => Promise<JournalEntry>;
   journalUpdate: (id: string, updates: Partial<JournalEntry>) => Promise<JournalEntry>;
   journalDelete: (id: string) => Promise<void>;
+  // Fired (main→renderer) after a sync pulls entries down, so the list reloads.
+  onJournalsChanged: (callback: () => void) => () => void;
 
   // Images
   imageAdd: (journalId: string, data: string) => Promise<JournalImage>;
