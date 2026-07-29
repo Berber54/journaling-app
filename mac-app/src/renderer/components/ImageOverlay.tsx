@@ -1,5 +1,5 @@
 import React from 'react';
-import type { FigureState, ImageAlign, ImageLayout } from '../lib/docImages';
+import type { FigureState, ImageAlign, ImageLayout, MediaKind } from '../lib/docImages';
 import { allowedAligns, isFloating } from '../lib/docImages';
 
 export interface OverlayRect {
@@ -12,6 +12,7 @@ export interface OverlayRect {
 interface ImageOverlayProps {
   rect: OverlayRect;
   state: FigureState;
+  kind?: MediaKind;
   onDragStart: (e: React.PointerEvent) => void;
   onResizeStart: (corner: Corner, e: React.PointerEvent) => void;
   onLayoutChange: (layout: ImageLayout) => void;
@@ -40,6 +41,7 @@ const ALIGN_LABEL: Record<ImageAlign, string> = {
 export default function ImageOverlay({
   rect,
   state,
+  kind = 'image',
   onDragStart,
   onResizeStart,
   onLayoutChange,
@@ -49,19 +51,22 @@ export default function ImageOverlay({
   const aligns = allowedAligns(state.layout);
   // Keep the bubble on screen: below the image when it's near the top.
   const toolbarBelow = rect.top < 52;
+  const noun = kind === 'video' ? 'video' : 'image';
 
   return (
     <div
       className="doc-image-overlay"
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
     >
+      {/* For a video the grab surface is a slim top strip, leaving the native
+          playback controls at the bottom clickable. Images grab the whole box. */}
       <div
-        className="doc-image-grab"
+        className={kind === 'video' ? 'doc-image-grab doc-image-grab-video' : 'doc-image-grab'}
         onPointerDown={onDragStart}
         title={
           isFloating(state.layout)
-            ? 'Drag to move the image anywhere'
-            : 'Drag to move the image through the text'
+            ? `Drag to move the ${noun} anywhere`
+            : `Drag to move the ${noun} through the text`
         }
       />
 
@@ -79,7 +84,7 @@ export default function ImageOverlay({
       <div
         className={`doc-image-bubble ${toolbarBelow ? 'below' : ''}`}
         role="toolbar"
-        aria-label="Image options"
+        aria-label={`${noun === 'video' ? 'Video' : 'Image'} options`}
         onPointerDown={(e) => e.stopPropagation()}
       >
         {LAYOUT_OPTIONS.map((opt) => (
@@ -126,8 +131,8 @@ export default function ImageOverlay({
           className="doc-image-btn doc-image-btn-danger"
           onMouseDown={(e) => e.preventDefault()}
           onClick={onDelete}
-          aria-label="Remove image"
-          title="Remove image"
+          aria-label={`Remove ${noun}`}
+          title={`Remove ${noun}`}
         >
           <IconTrash />
         </button>

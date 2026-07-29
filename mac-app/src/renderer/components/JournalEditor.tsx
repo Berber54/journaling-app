@@ -6,14 +6,17 @@ import {
   type FigureState,
   type ImageAlign,
   type ImageLayout,
+  type MediaKind,
   DEFAULT_LAYOUT,
   MAX_WIDTH,
   MIN_WIDTH,
   allFigures,
   createFigure,
+  figureKind,
   findFigure,
   hydrateImages,
   isFloating,
+  mediaKindFromDataUrl,
   readFigure,
   referencedImageIds,
   serializeContent,
@@ -39,6 +42,11 @@ const toHtml = (s: string) =>
 const COLORS = ['#dbe3f4', '#3f6fd6', '#35b57e', '#d6a24a', '#e0596a', '#b98cff'];
 
 const DRAG_THRESHOLD = 4; // px before a click on an image turns into a drag
+
+// Videos ride the same base64 sync payload as images (ARCHITECTURE §8), so a
+// single huge file would bloat every sync. Cap uploads well under the server's
+// JSON body limit; base64 inflates bytes by ~33%.
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
 
 interface DragState {
   imageId: string;
@@ -77,12 +85,14 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false });
 
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<{ rect: OverlayRect; state: FigureState } | null>(null);
+  const [overlay, setOverlay] = useState<{ rect: OverlayRect; state: FigureState; kind: MediaKind } | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [imageCount, setImageCount] = useState(0);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const colorInputRef = useRef<HTMLInputElement | null>(null);
@@ -125,6 +135,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     setOverlay({
       rect: { left: f.left - s.left, top: f.top - s.top, width: f.width, height: f.height },
       state: readFigure(fig),
+      kind: figureKind(fig),
     });
   }, [selectedImageId]);
 
@@ -197,6 +208,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       setJournalDate(entry.journal_date);
       setSaveStatus('saved');
       setSelectedImageId(null);
+      setMediaError(null);
 
       let active = true;
       window.electronAPI.imageList(entry.id).then((imgs) => {
@@ -212,7 +224,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
         const referenced = referencedImageIds(root);
         const strays = imgs.filter((im) => !referenced.has(im.id));
         for (const im of strays) {
-          root.appendChild(createFigure(im.id, { layout: DEFAULT_LAYOUT }));
+          root.appendChild(createFigure(im.id, { layout: DEFAULT_LAYOUT }, mediaKindFromDataUrl(im.data)));
           root.appendChild(document.createElement('br'));
         }
 
@@ -290,16 +302,21 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     if (root.contains(range.startContainer)) savedRangeRef.current = range.cloneRange();
   }, []);
 
-  // ─── Image upload ──────────────────────────────────────────────
+  // ─── Media upload (images & videos) ────────────────────────────
   const handlePickImages = () => {
     rememberSelection();
     fileInputRef.current?.click();
   };
 
-  const insertFigure = (imageId: string) => {
+  const handlePickVideos = () => {
+    rememberSelection();
+    videoInputRef.current?.click();
+  };
+
+  const insertFigure = (imageId: string, kind: MediaKind = 'image') => {
     const root = contentRef.current;
     if (!root) return;
-    const fig = createFigure(imageId);
+    const fig = createFigure(imageId, undefined, kind);
     const range = savedRangeRef.current;
 
     if (range && root.contains(range.startContainer)) {
@@ -324,18 +341,25 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = ''; // allow re-selecting the same file
+    setMediaError(null);
 
     let lastId: string | null = null;
     for (const file of files) {
+      if (file.type.startsWith('video/') && file.size > MAX_VIDEO_BYTES) {
+        setMediaError(`"${file.name}" is larger than 100 MB — trim or compress it before adding.`);
+        continue;
+      }
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(file);
       });
+      // The bytes are just a data: URL; its MIME type decides image vs video.
+      const kind = mediaKindFromDataUrl(dataUrl);
       const saved = await window.electronAPI.imageAdd(entry.id, dataUrl);
       imagesRef.current.set(saved.id, saved.data ?? dataUrl);
-      insertFigure(saved.id);
+      insertFigure(saved.id, kind);
       lastId = saved.id;
     }
 
@@ -502,6 +526,13 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     const fig = figureFromEvent(e.target);
     if (!fig || !fig.dataset.imageId) {
       if (selectedImageId) setSelectedImageId(null);
+      return;
+    }
+    // A video needs its native controls (play/scrub) to receive the click, so
+    // don't preventDefault or start a body-drag: just select it. Moving and
+    // resizing a video happen through the overlay's grab strip and handles.
+    if (figureKind(fig) === 'video') {
+      setSelectedImageId(fig.dataset.imageId);
       return;
     }
     e.preventDefault(); // don't drop a caret inside the figure
@@ -723,9 +754,25 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
             <path d="M2.2 12.1l3.5-3.6 2.6 2.6 2.5-2.1 3 3.1" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
           </svg>
         </button>
-        {imageCount > 0 && (
-          <span className="editor-toolbar-hint">Click an image to move, resize or wrap text</span>
-        )}
+        <button
+          type="button"
+          className="editor-tool editor-tool-video"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handlePickVideos}
+          aria-label="Insert video"
+          title="Insert video — then drag it where you want it"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <rect x="1.2" y="3.4" width="9.4" height="9.2" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M11 6.6l3.8-2.1v7l-3.8-2.1z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M4.4 6.2l3.4 1.8-3.4 1.8z" fill="currentColor" />
+          </svg>
+        </button>
+        {mediaError ? (
+          <span className="editor-toolbar-hint editor-toolbar-error">{mediaError}</span>
+        ) : imageCount > 0 ? (
+          <span className="editor-toolbar-hint">Click a photo or video to move, resize or wrap text</span>
+        ) : null}
       </div>
 
       <div className="editor-surface" ref={surfaceRef}>
@@ -761,6 +808,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
           <ImageOverlay
             rect={overlay.rect}
             state={overlay.state}
+            kind={overlay.kind}
             onDragStart={(e) => {
               e.preventDefault();
               beginDrag(selectedImageId, e.clientX, e.clientY);
@@ -781,6 +829,15 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFilesSelected}
+      />
+
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
