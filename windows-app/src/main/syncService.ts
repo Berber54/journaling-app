@@ -5,6 +5,10 @@ import {
   getConfig,
   setConfig,
   getPendingSyncCount,
+  getPendingSyncImages,
+  getPendingImageCount,
+  upsertImageFromServer,
+  markImagesSynced,
 } from './database.js';
 import type { AuthResponse, SyncRequest, SyncResponse, SyncStatus } from '../shared/types.js';
 
@@ -35,7 +39,7 @@ export function getSyncStatus(): SyncStatus {
   return {
     online: isOnline,
     lastSync: getConfig('last_sync_timestamp'),
-    pendingCount: getPendingSyncCount(),
+    pendingCount: getPendingSyncCount() + getPendingImageCount(),
     syncing: isSyncing,
   };
 }
@@ -58,7 +62,7 @@ export function setOnlineStatus(online: boolean): void {
 
 // ─── API Helpers ─────────────────────────────────────────────
 
-async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
   const serverUrl = getConfig('server_url');
   if (!serverUrl) throw new Error('Server URL not configured');
 
@@ -156,10 +160,12 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
     const result = await withRetry(async () => {
       const lastSyncTimestamp = getConfig('last_sync_timestamp');
       const pendingEntries = getPendingSyncEntries();
+      const pendingImages = getPendingSyncImages();
 
       const syncRequest: SyncRequest = {
         lastSyncTimestamp,
         entries: pendingEntries,
+        images: pendingImages,
       };
 
       const response = await apiFetch('/sync', {
@@ -179,9 +185,19 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
         upsertFromServer(entry);
       }
 
+      // Apply server images locally (bytes + tombstones)
+      for (const image of syncResponse.images ?? []) {
+        upsertImageFromServer(image);
+      }
+
       // Mark sent entries as synced
       if (pendingEntries.length > 0) {
         markEntriesSynced(pendingEntries.map(e => e.id));
+      }
+
+      // Mark sent images as synced
+      if (pendingImages.length > 0) {
+        markImagesSynced(pendingImages.map(im => im.id));
       }
 
       // Update last sync timestamp
@@ -189,21 +205,30 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
 
       return {
         sent: pendingEntries.length,
+        sentImages: pendingImages.length,
         received: syncResponse.entries.length,
+        receivedImages: (syncResponse.images ?? []).length,
         conflicts: syncResponse.conflicts.length,
       };
     });
 
-    console.log(`[sync] Complete: sent=${result.sent}, received=${result.received}, conflicts=${result.conflicts}`);
+    console.log(
+      `[sync] Complete: sent=${result.sent}(+${result.sentImages} img), ` +
+        `received=${result.received}(+${result.receivedImages} img), conflicts=${result.conflicts}`
+    );
     isSyncing = false;
     emitStatus();
 
-    // If the server sent entries down, tell the renderer to reload its list.
-    if (result.received > 0 && journalsChangedCallback) {
+    // If the server sent entries or images down, tell the renderer to reload
+    // its list and re-hydrate the open entry's images.
+    if ((result.received > 0 || result.receivedImages > 0) && journalsChangedCallback) {
       journalsChangedCallback();
     }
 
-    return { success: true, message: `Synced: ${result.sent} sent, ${result.received} received` };
+    return {
+      success: true,
+      message: `Synced: ${result.sent} sent, ${result.received} received`,
+    };
   } catch (err: any) {
     console.error('[sync] Failed:', err.message);
     isSyncing = false;

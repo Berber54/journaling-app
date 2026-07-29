@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import type { JournalEntry } from '../shared/types.js';
+import type { JournalEntry, SyncImage } from '../shared/types.js';
 
 // ─── Database Setup ──────────────────────────────────────────
 
@@ -42,13 +42,32 @@ db.exec(`
     id TEXT PRIMARY KEY,
     journal_id TEXT NOT NULL,
     data TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT '',
+    deleted INTEGER NOT NULL DEFAULT 0,
+    synced INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE INDEX IF NOT EXISTS idx_journals_updated ON journals(updated_at);
   CREATE INDEX IF NOT EXISTS idx_journals_synced ON journals(synced);
   CREATE INDEX IF NOT EXISTS idx_images_journal ON journal_images(journal_id);
+  CREATE INDEX IF NOT EXISTS idx_images_synced ON journal_images(synced);
 `);
+
+// ─── Migration: image sync columns ───────────────────────────
+// Older installs created journal_images with only (id, journal_id, data,
+// created_at). Image bytes now sync (ARCHITECTURE §8), which needs the same
+// bookkeeping journals have. Add the columns if they're missing and mark any
+// pre-existing local images as pending so they upload to the server once.
+{
+  const cols = db.prepare('PRAGMA table_info(journal_images)').all() as { name: string }[];
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (!has('updated_at')) db.exec("ALTER TABLE journal_images ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+  if (!has('deleted')) db.exec('ALTER TABLE journal_images ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+  if (!has('synced')) db.exec('ALTER TABLE journal_images ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
+  // Backfill updated_at for legacy rows; leaving synced=0 queues them to upload.
+  db.exec("UPDATE journal_images SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL");
+}
 
 console.log(`[database] Local DB initialized at ${DB_PATH}`);
 
@@ -192,23 +211,81 @@ export interface JournalImage {
   created_at: string;
 }
 
+interface ImageRow {
+  id: string;
+  journal_id: string;
+  data: string;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+  synced: number;
+}
+
 export function addImage(journalId: string, data: string): JournalImage {
   const id = uuidv4();
-  const created_at = new Date().toISOString();
+  const now = new Date().toISOString();
   db.prepare(
-    'INSERT INTO journal_images (id, journal_id, data, created_at) VALUES (?, ?, ?, ?)'
-  ).run(id, journalId, data, created_at);
-  return { id, journal_id: journalId, data, created_at };
+    `INSERT INTO journal_images (id, journal_id, data, created_at, updated_at, deleted, synced)
+     VALUES (?, ?, ?, ?, ?, 0, 0)`
+  ).run(id, journalId, data, now, now);
+  return { id, journal_id: journalId, data, created_at: now };
 }
 
 export function getImages(journalId: string): JournalImage[] {
   return db.prepare(
-    'SELECT id, journal_id, data, created_at FROM journal_images WHERE journal_id = ? ORDER BY created_at ASC'
+    'SELECT id, journal_id, data, created_at FROM journal_images WHERE journal_id = ? AND deleted = 0 ORDER BY created_at ASC'
   ).all(journalId) as JournalImage[];
 }
 
+// Soft delete: keep a tombstone (bytes cleared) with synced = 0 so the removal
+// propagates to the server and other devices, mirroring how journals delete.
 export function deleteImage(id: string): void {
-  db.prepare('DELETE FROM journal_images WHERE id = ?').run(id);
+  const now = new Date().toISOString();
+  db.prepare(
+    "UPDATE journal_images SET deleted = 1, data = '', updated_at = ?, synced = 0 WHERE id = ?"
+  ).run(now, id);
+}
+
+// ─── Image Sync Helpers ──────────────────────────────────────
+
+export function getPendingSyncImages(): SyncImage[] {
+  const rows = db.prepare('SELECT * FROM journal_images WHERE synced = 0').all() as ImageRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    journal_id: r.journal_id,
+    data: r.data,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    deleted: r.deleted === 1,
+  }));
+}
+
+export function getPendingImageCount(): number {
+  const result = db.prepare('SELECT COUNT(*) as count FROM journal_images WHERE synced = 0').get() as { count: number };
+  return result.count;
+}
+
+export function upsertImageFromServer(image: SyncImage): void {
+  const existing = db.prepare('SELECT id FROM journal_images WHERE id = ?').get(image.id);
+  if (existing) {
+    db.prepare(
+      `UPDATE journal_images SET journal_id = ?, data = ?, created_at = ?, updated_at = ?, deleted = ?, synced = 1
+       WHERE id = ?`
+    ).run(image.journal_id, image.data, image.created_at, image.updated_at, image.deleted ? 1 : 0, image.id);
+  } else {
+    db.prepare(
+      `INSERT INTO journal_images (id, journal_id, data, created_at, updated_at, deleted, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`
+    ).run(image.id, image.journal_id, image.data, image.created_at, image.updated_at, image.deleted ? 1 : 0);
+  }
+}
+
+export function markImagesSynced(ids: string[]): void {
+  const stmt = db.prepare('UPDATE journal_images SET synced = 1 WHERE id = ?');
+  const transaction = db.transaction(() => {
+    for (const id of ids) stmt.run(id);
+  });
+  transaction();
 }
 
 // ─── App Config ──────────────────────────────────────────────

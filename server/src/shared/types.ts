@@ -8,13 +8,26 @@ export interface JournalEntry {
   deleted: boolean;
 }
 
+// An image travelling over the sync protocol. `data` is a base64 data URL for a
+// live image and an empty string for a tombstone (deleted = true).
+export interface SyncImage {
+  id: string;
+  journal_id: string;
+  data: string;
+  created_at: string;
+  updated_at: string;
+  deleted: boolean;
+}
+
 export interface SyncRequest {
   lastSyncTimestamp: string | null;
   entries: JournalEntry[];
+  images?: SyncImage[];
 }
 
 export interface SyncResponse {
   entries: JournalEntry[];
+  images: SyncImage[];
   serverTimestamp: string;
   conflicts: ConflictRecord[];
 }
@@ -59,4 +72,19 @@ export interface JournalRow {
   created_at: string;
   updated_at: string;
   deleted: number;
+}
+
+export interface ImageRow {
+  id: string;
+  user_id: string;
+  journal_id: string;
+  data: string;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }

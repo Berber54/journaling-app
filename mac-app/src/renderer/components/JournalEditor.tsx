@@ -244,6 +244,22 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     }
   }, [entry.id, entry.title, entry.content, entry.journal_date, triggerSave, syncImageCount]);
 
+  // When a sync pulls image bytes (or tombstones) down, re-fetch this entry's
+  // images and re-hydrate. This covers the case where the entry's HTML already
+  // referenced an image placed on another device but the bytes only just
+  // arrived — the "image not available" figure fills in without reopening.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onJournalsChanged(async () => {
+      const root = contentRef.current;
+      if (!root) return;
+      const imgs = await window.electronAPI.imageList(entry.id);
+      imagesRef.current = new Map(imgs.map((im) => [im.id, im.data]));
+      hydrateImages(root, imagesRef.current);
+      syncImageCount();
+    });
+    return unsubscribe;
+  }, [entry.id, syncImageCount]);
+
   // Make foreColor / etc. emit inline CSS spans rather than legacy <font> tags.
   useEffect(() => {
     try {

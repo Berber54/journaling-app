@@ -18,6 +18,19 @@ const syncRequestSchema = z.object({
       deleted: z.boolean(),
     })
   ),
+  images: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        journal_id: z.string().uuid(),
+        data: z.string(),
+        created_at: z.string().datetime(),
+        updated_at: z.string().datetime(),
+        deleted: z.boolean(),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 syncRouter.post('/', authMiddleware, (req: Request, res: Response, next: NextFunction) => {
@@ -26,8 +39,8 @@ syncRouter.post('/', authMiddleware, (req: Request, res: Response, next: NextFun
     const result = processSync(req.userId!, parsed);
 
     console.log(
-      `[sync] User ${req.userId}: received ${parsed.entries.length} entries, ` +
-        `sending ${result.entries.length} entries, ` +
+      `[sync] User ${req.userId}: received ${parsed.entries.length} entries / ${parsed.images.length} images, ` +
+        `sending ${result.entries.length} entries / ${result.images.length} images, ` +
         `${result.conflicts.length} conflicts`
     );
 

@@ -37,6 +37,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_journals_user_id ON journals(user_id);
   CREATE INDEX IF NOT EXISTS idx_journals_updated_at ON journals(updated_at);
   CREATE INDEX IF NOT EXISTS idx_journals_user_updated ON journals(user_id, updated_at);
+
+  -- Image bytes (base64 data URLs). Mirrors the client's journal_images table
+  -- but scoped by user_id so images sync across all of an account's devices.
+  -- Uses the same sync bookkeeping as journals: updated_at is the LWW clock and
+  -- deleted=1 is a tombstone (with the bytes cleared) so removals propagate.
+  CREATE TABLE IF NOT EXISTS journal_images (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    journal_id TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_images_user_updated ON journal_images(user_id, updated_at);
+  CREATE INDEX IF NOT EXISTS idx_images_journal ON journal_images(journal_id);
 `);
 
 console.log(`[database] Connected to SQLite at ${config.dbPath}`);

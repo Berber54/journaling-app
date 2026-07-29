@@ -17,6 +17,17 @@ export interface JournalImage {
   created_at: string;
 }
 
+// An image as it travels over the sync protocol. `data` is empty for a
+// tombstone (deleted = true). See ARCHITECTURE §8.
+export interface SyncImage {
+  id: string;
+  journal_id: string;
+  data: string;
+  created_at: string;
+  updated_at: string;
+  deleted: boolean;
+}
+
 // ─── LLM Chat ────────────────────────────────────────────────
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -27,10 +38,12 @@ export interface ChatMessage {
 export interface SyncRequest {
   lastSyncTimestamp: string | null;
   entries: JournalEntry[];
+  images?: SyncImage[];
 }
 
 export interface SyncResponse {
   entries: JournalEntry[];
+  images: SyncImage[];
   serverTimestamp: string;
   conflicts: ConflictRecord[];
 }
