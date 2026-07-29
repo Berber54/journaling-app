@@ -1,0 +1,41 @@
+appId: com.customjournal.app
+productName: Custom Journal
+copyright: Copyright © 2026
+
+directories:
+  output: dist-electron
+  buildResources: build
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  icon: build/icon.icns
+  category: public.app-category.lifestyle
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.inherit.plist
+  artifactName: "${productName}-${version}-mac.${ext}"
+
+dmg:
+  title: "${productName} ${version}"
+  background: build/dmg-background.png
+  iconSize: 100
+  contents:
+    - x: 380
+      y: 170
+      type: link
+      path: /Applications
+    - x: 130
+      y: 170
+      type: file
+
+extraMetadata:
+  main: dist/main/index.js
