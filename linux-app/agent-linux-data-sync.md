@@ -2,7 +2,7 @@
 
 > **Role**: Build the local SQLite database, sync engine, network monitor, and IPC handlers for the Linux Electron app.
 > **Prerequisites**: Electron setup and UI agents complete.
-> **Reference**: `../ARCHITECTURE.md` §5, §7, §12. See `../windows-app/agent-windows-data-sync.md` for baseline.
+> **Reference**: `../ARCHITECTURE.md` §5, §7, §12. **The Windows app (`../windows-app/src/main/`) is the reference implementation** — copy shared files verbatim from there; this file documents Linux-specific differences only.
 
 ---
 
@@ -12,16 +12,20 @@
 2. `src/main/syncService.ts` — sync engine (identical to Windows)
 3. `src/main/networkMonitor.ts` — network monitoring (identical to Windows)
 4. `src/main/ipcHandlers.ts` — IPC handlers (identical to Windows + Linux tray sync)
+5. `src/main/llmService.ts` — AI Assistant / OpenAI client (identical to Windows)
+6. `src/main/biometric.ts` — biometric unlock (**Linux-specific stub** — see below)
 
 ---
 
 ## Key Instruction
 
-**Copy ALL code exactly from `../windows-app/agent-windows-data-sync.md`** for these files:
+**Copy ALL code exactly from the Windows source (`../windows-app/src/main/`)** for these files:
 - `src/main/database.ts` — copy verbatim
 - `src/main/syncService.ts` — copy verbatim
 - `src/main/networkMonitor.ts` — copy verbatim
+- `src/main/llmService.ts` — copy verbatim (platform-agnostic; just calls the OpenAI HTTP API)
 - `src/main/ipcHandlers.ts` — copy verbatim, THEN apply the Linux-specific modification below
+- `src/main/biometric.ts` — **do NOT copy verbatim**; the Windows version drives Windows Hello via PowerShell. Replace it with the Linux stub below (same exported function signatures, so `ipcHandlers.ts` works unchanged).
 
 ---
 
@@ -63,6 +67,28 @@ This is cleaner than routing through IPC.
 
 ---
 
+## Linux-Specific: Biometric Stub (`src/main/biometric.ts`)
+
+The Windows app unlocks with Windows Hello, and macOS uses Touch ID. Linux has **no standard, universally available biometric API** (fingerprint support via PAM/fprintd is distro- and hardware-specific and not exposed to Electron). To keep the app **consistent** — same interface, same IPC channels, same renderer — provide a stub that simply reports biometrics as unavailable, so the app cleanly falls back to the passphrase everywhere:
+
+```typescript
+// Linux has no standard biometric API (no equivalent to Windows Hello / Touch ID).
+// These stubs keep the same interface as the Windows/Mac versions so ipcHandlers.ts,
+// the preload, and the renderer are all identical — biometrics simply report
+// unavailable and the passphrase path is always used.
+export async function checkBiometricAvailability(): Promise<boolean> {
+  return false;
+}
+
+export async function verifyBiometric(_reason = 'Unlock your journal'): Promise<boolean> {
+  return false;
+}
+```
+
+> **Note**: Because `checkBiometricAvailability()` returns `false`, the renderer never offers a biometric button on Linux — the lock screen shows the passphrase entry only. No IPC or UI changes are needed; `ipcHandlers.ts` still registers `biometric:available` / `biometric:verify` verbatim from Windows.
+
+---
+
 ## Final `src/main/index.ts`
 
 The Linux main process file is already complete in `agent-linux-electron-setup.md`. Add the sync import and update the tray handler as shown above. The final version should include:
@@ -93,10 +119,12 @@ The Linux main process file is already complete in `agent-linux-electron-setup.m
 10. Tray → "Quit" exits the app completely
 11. Open Settings → connect to server → Login → verify sync fires
 12. Create entry offline → reconnect → verify auto-sync
-13. Start with `--hidden` flag → app starts in tray, hidden
-14. `npm run package` → produces `.AppImage` and `.deb` in `dist-electron/`
-15. AppImage: `chmod +x` and run → app works
-16. `.deb` install: `sudo dpkg -i` → app appears in application launcher
-17. App appears in system search (GNOME/KDE Activities, application menu)
+13. Settings → AI Assistant → set OpenAI key → chat panel returns a response
+14. Lock screen shows passphrase entry only (no biometric button — expected on Linux)
+15. Start with `--hidden` flag → app starts in tray, hidden
+16. `npm run package` → produces `.AppImage` and `.deb` in `dist-electron/`
+17. AppImage: `chmod +x` and run → app works
+18. `.deb` install: `sudo dpkg -i` → app appears in application launcher
+19. App appears in system search (GNOME/KDE Activities, application menu)
 
 > **Linux app is complete.** All three Linux agents have delivered their components.

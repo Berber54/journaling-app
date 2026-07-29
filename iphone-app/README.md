@@ -15,6 +15,7 @@
 - Lock on app background
 - Offline-first with background sync
 - Manual date override for journal entries
+- AI Assistant — chat with OpenAI over your entries (same feature as the desktop apps; key stored in Keychain, request goes device → OpenAI directly, never through the sync server)
 - Push notification support for sync conflicts (stretch goal)
 
 ## Notes

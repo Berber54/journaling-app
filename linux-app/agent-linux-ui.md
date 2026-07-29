@@ -8,13 +8,13 @@
 
 ## Deliverables
 
-Same as Windows UI agent — all 19 files. See `../windows-app/agent-windows-ui.md` for the complete file list.
+Every renderer file the Windows app has — the complete list is the contents of `../windows-app/src/renderer/`. This **includes the AI Assistant** (`components/ChatPanel.tsx` + `styles/chat.css`), which earlier drafts of this spec omitted.
 
 ---
 
 ## Key Instruction
 
-**Copy ALL component code exactly from `../windows-app/agent-windows-ui.md`** — every component, hook, utility, and CSS file. The Linux UI is functionally and visually identical to the Windows UI.
+**Copy ALL component code exactly from the Windows source (`../windows-app/src/renderer/`)** — every component, hook, utility, and CSS file. The Linux UI is functionally and visually identical to the Windows UI.
 
 Linux uses a **standard window frame** (`frame: true`), just like Windows. There are **no titlebar adjustments** needed (unlike macOS which uses `hiddenInset`).
 
@@ -28,9 +28,9 @@ No additional CSS modifications are needed.
 
 ---
 
-## Files to Copy Verbatim from Windows UI Agent
+## Files to Copy Verbatim from Windows Source
 
-Copy each of these files exactly from `../windows-app/agent-windows-ui.md`:
+Copy each of these files exactly from `../windows-app/src/renderer/`:
 
 1. `src/renderer/index.html` — HTML entry point
 2. `src/renderer/main.tsx` — React entry
@@ -39,18 +39,20 @@ Copy each of these files exactly from `../windows-app/agent-windows-ui.md`:
 5. `src/renderer/styles/lock.css` — lock screen styles
 6. `src/renderer/styles/sidebar.css` — sidebar styles
 7. `src/renderer/styles/editor.css` — editor styles
-8. `src/renderer/components/LockScreen.tsx` — PIN lock overlay
-9. `src/renderer/components/Sidebar.tsx` — navigation sidebar
-10. `src/renderer/components/JournalList.tsx` — journal list
-11. `src/renderer/components/JournalEditor.tsx` — create/edit journal
-12. `src/renderer/components/DateTimePicker.tsx` — manual date override
-13. `src/renderer/components/Settings.tsx` — app settings
-14. `src/renderer/components/SyncStatus.tsx` — sync indicator
-15. `src/renderer/hooks/useJournals.ts` — journal CRUD hook
-16. `src/renderer/hooks/useLock.ts` — lock state hook
-17. `src/renderer/hooks/useSync.ts` — sync status hook
-18. `src/renderer/lib/ipc.ts` — IPC wrapper
-19. `src/renderer/lib/utils.ts` — utility functions
+8. `src/renderer/styles/chat.css` — AI Assistant styles
+9. `src/renderer/components/LockScreen.tsx` — PIN lock overlay
+10. `src/renderer/components/Sidebar.tsx` — navigation sidebar
+11. `src/renderer/components/JournalList.tsx` — journal list
+12. `src/renderer/components/JournalEditor.tsx` — create/edit journal
+13. `src/renderer/components/DateTimePicker.tsx` — manual date override
+14. `src/renderer/components/Settings.tsx` — app settings
+15. `src/renderer/components/SyncStatus.tsx` — sync indicator
+16. `src/renderer/components/ChatPanel.tsx` — AI Assistant chat panel
+17. `src/renderer/hooks/useJournals.ts` — journal CRUD hook
+18. `src/renderer/hooks/useLock.ts` — lock state hook
+19. `src/renderer/hooks/useSync.ts` — sync status hook
+20. `src/renderer/lib/ipc.ts` — IPC wrapper
+21. `src/renderer/lib/utils.ts` — utility functions
 
 ---
 

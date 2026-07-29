@@ -8,13 +8,13 @@
 
 ## Deliverables
 
-Same as Windows UI agent — all 19 files. See `../windows-app/agent-windows-ui.md` for the complete file list.
+Every renderer file the Windows app has — the complete list is the contents of `../windows-app/src/renderer/`. This **includes the AI Assistant** (`components/ChatPanel.tsx` + `styles/chat.css`), which earlier drafts of this spec omitted.
 
 ---
 
 ## Key Instruction
 
-**Copy ALL component code exactly from `../windows-app/agent-windows-ui.md`** — every component, hook, utility, and CSS file — with the following Mac-specific modifications:
+**Copy ALL component code exactly from the Windows source (`../windows-app/src/renderer/`)** — every component, hook, utility, and CSS file — with the following Mac-specific modifications:
 
 ---
 
@@ -98,15 +98,17 @@ All other files are **identical** to the Windows versions:
 - `src/renderer/components/DateTimePicker.tsx`
 - `src/renderer/components/Settings.tsx`
 - `src/renderer/components/SyncStatus.tsx`
+- `src/renderer/components/ChatPanel.tsx` — AI Assistant chat panel
 - `src/renderer/hooks/useJournals.ts`
 - `src/renderer/hooks/useLock.ts`
 - `src/renderer/hooks/useSync.ts`
 - `src/renderer/lib/ipc.ts`
 - `src/renderer/lib/utils.ts`
 - `src/renderer/styles/editor.css`
+- `src/renderer/styles/chat.css` — AI Assistant styles
 - `src/renderer/styles/sidebar.css` (base styles same, Mac CSS additions in global.css)
 
-Copy each of these files verbatim from `../windows-app/agent-windows-ui.md`.
+Copy each of these files verbatim from `../windows-app/src/renderer/`.
 
 ---
 

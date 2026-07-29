@@ -18,7 +18,7 @@
     "react-dom": "^19.0.0",
     "better-sqlite3": "^11.7.0",
     "uuid": "^11.0.0",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^6.0.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",

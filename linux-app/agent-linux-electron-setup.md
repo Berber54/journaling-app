@@ -2,7 +2,7 @@
 
 > **Role**: Set up the Electron + React + TypeScript project skeleton for Linux.
 > **Prerequisites**: Node.js 20+ and npm installed on the Linux dev machine.
-> **Reference**: `../ARCHITECTURE.md` §9.2, §10, §12, §13. See `../windows-app/agent-windows-electron-setup.md` for the baseline.
+> **Reference**: `../ARCHITECTURE.md` §9.2, §10, §12, §13. **The Windows app (`../windows-app/src/`) is the reference implementation** — copy shared files verbatim from there; this file documents Linux-specific deviations only. (There is no `agent-windows-*.md`; Windows ships as built source, so the actual `../windows-app/src/**` files are the baseline.)
 
 ---
 
@@ -13,7 +13,7 @@
 3. `vite.config.ts`
 4. `electron-builder.yml` — Linux AppImage/deb config
 5. `src/main/index.ts` — main process with Alt+L, tray icon, .desktop integration
-6. `src/preload/index.ts` — preload script (identical to Windows)
+6. `src/preload/index.cts` — preload script (identical to Windows)
 7. `src/shared/types.ts` — shared types (identical to Windows)
 8. `custom-journal.desktop` — freedesktop .desktop entry
 
@@ -41,7 +41,7 @@
     "react-dom": "^19.0.0",
     "better-sqlite3": "^11.7.0",
     "uuid": "^11.0.0",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^6.0.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -64,7 +64,7 @@
 
 ## Step 2: TypeScript Configs & Vite
 
-Identical to Windows. Create **`tsconfig.json`**, **`tsconfig.main.json`**, **`tsconfig.renderer.json`**, and **`vite.config.ts`** with the same content as `../windows-app/agent-windows-electron-setup.md` Steps 2–3.
+Identical to Windows. Create **`tsconfig.json`**, **`tsconfig.main.json`**, **`tsconfig.renderer.json`**, and **`vite.config.ts`** — copy them exactly from the matching files in `../windows-app/` (`../windows-app/tsconfig.json`, `../windows-app/tsconfig.main.json`, `../windows-app/tsconfig.renderer.json`, `../windows-app/vite.config.ts`).
 
 ---
 
@@ -160,7 +160,7 @@ Terminal=false
 
 ## Step 5: Shared Types & Preload
 
-Create **`src/shared/types.ts`** and **`src/preload/index.ts`** — identical to Windows. Copy from `../windows-app/agent-windows-electron-setup.md` Steps 5–6.
+Create **`src/shared/types.ts`** and **`src/preload/index.cts`** — identical to Windows. Copy from `../windows-app/src/shared/types.ts` and `../windows-app/src/preload/index.cts`. `types.ts` includes the `ChatMessage` type, and the preload exposes every IPC channel including `biometricAvailable` / `biometricVerify` and `llmChat` (AI Assistant).
 
 ---
 

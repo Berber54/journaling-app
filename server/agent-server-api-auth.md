@@ -256,9 +256,21 @@ export async function loginUser(username: string, password: string): Promise<Aut
 
 // ─── Refresh Token ───────────────────────────────────────────
 
-export function refreshToken(userId: string): AuthResponse {
+// Issues a fresh token from an existing one. The incoming token is verified
+// with `ignoreExpiration: true` so a *recently expired* token can still be
+// exchanged — this is what makes the client's reactive "refresh on 401" flow
+// work (by the time a request 401s, the token has usually just expired). A
+// token with a bad signature is still rejected.
+export function refreshToken(rawToken: string): AuthResponse {
+  let payload: { userId: string };
+  try {
+    payload = jwt.verify(rawToken, config.jwtSecret, { ignoreExpiration: true }) as { userId: string };
+  } catch {
+    throw new AppError(401, 'INVALID_TOKEN', 'Token is invalid');
+  }
+
   // Verify user still exists
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.userId) as UserRow | undefined;
   if (!user) {
     throw new AppError(401, 'UNAUTHORIZED', 'User no longer exists');
   }
@@ -438,8 +450,8 @@ Create **`src/routes/auth.ts`**:
 
 ```typescript
 import { Router, Request, Response, NextFunction } from 'express';
+import { AppError } from '../middleware/errorHandler.js';
 import { registerUser, loginUser, refreshToken } from '../services/authService.js';
-import { authMiddleware } from '../middleware/auth.js';
 
 export const authRouter = Router();
 
@@ -465,10 +477,21 @@ authRouter.post('/login', async (req: Request, res: Response, next: NextFunction
   }
 });
 
-// POST /api/auth/refresh — requires valid (or recently expired) token
-authRouter.post('/refresh', authMiddleware, (req: Request, res: Response, next: NextFunction) => {
+// POST /api/auth/refresh — accepts a valid OR recently-expired token.
+// We parse the Bearer token ourselves instead of using authMiddleware, because
+// authMiddleware rejects expired tokens (401 TOKEN_EXPIRED) and refresh must
+// tolerate them — that is the whole point of refresh.
+authRouter.post('/refresh', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = refreshToken(req.userId!);
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      throw new AppError(401, 'UNAUTHORIZED', 'Authorization header is required');
+    }
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      throw new AppError(401, 'UNAUTHORIZED', 'Authorization header must be: Bearer <token>');
+    }
+    const result = refreshToken(parts[1]);
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -685,7 +708,7 @@ curl http://localhost:3377/api/journals
 curl -X POST http://localhost:3377/api/auth/refresh \
   -H "Authorization: Bearer $TOKEN"
 ```
-**Expected**: `200` with new token
+**Expected**: `200` with new token. This also succeeds with a **recently expired** token (only the signature is checked, not expiry) — a token with a bad signature returns `401 INVALID_TOKEN`.
 
 ### 9. Health check
 ```bash
