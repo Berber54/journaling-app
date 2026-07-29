@@ -14,7 +14,8 @@ A private, offline-first journaling app that syncs across all your devices via a
 - **Instant Lock** — Hotkey lock (Alt+L / Cmd+L), auto-lock on focus loss and minimize
 - **Passphrase Protection** — Any-character passphrase (min 6 chars), bcrypt-hashed. No content visible when locked
 - **Windows Hello** — Optional fingerprint / face / device-PIN unlock (Windows)
-- **Rich-Text Editor** — Bold, italic, underline, text colors, and inline images
+- **Rich-Text Editor** — Bold, italic, underline, and text colors
+- **Placed Images** — Insert from the toolbar, then drag the image where you want it and pick how the text behaves around it: in line, wrapped, break text, behind or in front — just like Google Docs
 - **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (bring your own API key)
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
@@ -71,7 +72,8 @@ custom_journal/
 ├── windows-app/             ← Windows Electron app
 │   ├── src/main/            # Main process (Alt+L, blur-lock, IPC)
 │   ├── src/renderer/        # React UI (components, hooks, styles)
-│   └── src/preload/         # Secure IPC bridge
+│   ├── src/preload/         # Secure IPC bridge
+│   └── AGENT-IMAGE-PLACEMENT-UPDATE.md  # Image placement: what changed + Windows test checklist
 ├── mac-app/                 ← macOS Electron app
 │   ├── src/main/            # Main process (Cmd+L, dock, hiddenInset)
 │   ├── src/renderer/        # React UI (+ titlebar drag regions)
@@ -231,11 +233,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, an
 - [x] macOS desktop app
 - [x] Linux desktop app
 - [x] Rich-text editor with formatting toolbar (bold/italic/underline/color)
-- [x] Inline image attachments (stored locally)
+- [x] Image attachments (stored locally)
+- [x] Google-Docs-style image placement — drag to position, corner-resize, five text-wrapping modes
 - [x] AI assistant over your entries (OpenAI, bring-your-own-key)
 - [x] Windows Hello biometric unlock
 - [ ] iPhone app (React Native or native Swift)
-- [ ] Sync image attachments to the server (currently local-only)
+- [ ] Sync image attachments to the server (image *placement* already syncs with the entry; the pixels are still local-only)
 - [ ] Journal search (full-text search via SQLite FTS5)
 - [ ] Journal tags / categories
 - [ ] Export to PDF / Markdown files
