@@ -74,7 +74,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ─── Image Handlers ────────────────────────────────────────
 
   ipcMain.handle('image:add', (_event, journalId: string, data: string) => {
-    return addImage(journalId, data);
+    const image = addImage(journalId, data);
+    debouncedSync(); // push the new image bytes to the server
+    return image;
   });
 
   ipcMain.handle('image:list', (_event, journalId: string) => {
@@ -83,6 +85,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('image:delete', (_event, id: string) => {
     deleteImage(id);
+    debouncedSync(); // propagate the tombstone so the image is removed everywhere
   });
 
   // ─── Sync Handlers ─────────────────────────────────────────

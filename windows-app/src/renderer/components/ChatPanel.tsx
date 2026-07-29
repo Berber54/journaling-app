@@ -76,19 +76,20 @@ export default function ChatPanel({ mode, entries, currentEntry, onClose }: Chat
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [keyInput, setKeyInput] = useState('');
+  // The AI key lives on the server now, so the only thing the client needs is a
+  // configured server connection. null = still checking.
+  const [serverReady, setServerReady] = useState<boolean | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Load saved model + whether an API key is configured.
+  // Load saved model + whether the server connection is configured.
   useEffect(() => {
     (async () => {
       const savedModel = await window.electronAPI.settingsGet('openai_model');
       if (savedModel) setModel(savedModel);
-      const key = await window.electronAPI.settingsGet('openai_api_key');
-      setHasKey(!!key);
+      const configured = await window.electronAPI.authIsConfigured();
+      setServerReady(configured);
     })();
   }, []);
 
@@ -98,20 +99,12 @@ export default function ChatPanel({ mode, entries, currentEntry, onClose }: Chat
   }, [messages, loading]);
 
   useEffect(() => {
-    if (hasKey) inputRef.current?.focus();
-  }, [hasKey]);
+    if (serverReady) inputRef.current?.focus();
+  }, [serverReady]);
 
   const handleModelChange = (id: string) => {
     setModel(id);
     window.electronAPI.settingsSet('openai_model', id);
-  };
-
-  const handleSaveKey = async () => {
-    const trimmed = keyInput.trim();
-    if (!trimmed) return;
-    await window.electronAPI.settingsSet('openai_api_key', trimmed);
-    setKeyInput('');
-    setHasKey(true);
   };
 
   const send = useCallback(async () => {
@@ -199,28 +192,16 @@ export default function ChatPanel({ mode, entries, currentEntry, onClose }: Chat
           )}
         </div>
 
-        {/* API key gate */}
-        {hasKey === false ? (
+        {/* Server-connection gate — the AI key lives on the server */}
+        {serverReady === false ? (
           <div className="chat-keygate">
-            <p className="chat-keygate-title">Connect OpenAI</p>
+            <p className="chat-keygate-title">Connect to your server</p>
             <p className="chat-keygate-desc">
-              Paste your OpenAI API key to start. It's stored locally on this device only.
+              The AI assistant runs through your journal server, which holds the API key. Log in to
+              your server in Settings to start chatting.
             </p>
-            <input
-              className="input"
-              type="password"
-              placeholder="sk-..."
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveKey();
-              }}
-            />
-            <button className="btn btn-primary" onClick={handleSaveKey} disabled={!keyInput.trim()}>
-              Save key
-            </button>
             <p className="chat-keygate-hint">
-              Get a key at platform.openai.com → API keys.
+              Settings → Server Connection.
             </p>
           </div>
         ) : (

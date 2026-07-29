@@ -14,8 +14,9 @@ A private, offline-first journaling app that syncs across all your devices via a
 - **Instant Lock** — Hotkey lock (Alt+L / Cmd+L), auto-lock on focus loss and minimize
 - **Passphrase Protection** — Any-character passphrase (min 6 chars), bcrypt-hashed. No content visible when locked
 - **Windows Hello** — Optional fingerprint / face / device-PIN unlock (Windows)
-- **Rich-Text Editor** — Bold, italic, underline, text colors, and inline images
-- **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (bring your own API key)
+- **Rich-Text Editor** — Bold, italic, underline, and text colors
+- **Placed Images** — Insert from the toolbar, then drag the image where you want it and pick how the text behaves around it: in line, wrapped, break text, behind or in front — just like Google Docs
+- **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (API key lives on your server, shared by every device)
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
 - **Dark Theme** — Premium dark UI with glassmorphism, micro-animations, and Inter font
@@ -46,7 +47,7 @@ A private, offline-first journaling app that syncs across all your devices via a
 | Desktop Apps | Electron 33, React 19, TypeScript 5 |
 | Auth | JWT (HS256, 24h expiry, refreshable) + bcrypt |
 | Sync | Offline-first, last-write-wins conflict resolution |
-| AI | OpenAI Chat Completions (key stored locally, never synced) |
+| AI | OpenAI Chat Completions, proxied through your server (key stored server-side only) |
 | Bundler | Vite 6 |
 | Packaging | electron-builder (NSIS / DMG / AppImage+deb) |
 
@@ -71,7 +72,8 @@ custom_journal/
 ├── windows-app/             ← Windows Electron app
 │   ├── src/main/            # Main process (Alt+L, blur-lock, IPC)
 │   ├── src/renderer/        # React UI (components, hooks, styles)
-│   └── src/preload/         # Secure IPC bridge
+│   ├── src/preload/         # Secure IPC bridge
+│   └── AGENT-IMAGE-PLACEMENT-UPDATE.md  # Image placement: what changed + Windows test checklist
 ├── mac-app/                 ← macOS Electron app
 │   ├── src/main/            # Main process (Cmd+L, dock, hiddenInset)
 │   ├── src/renderer/        # React UI (+ titlebar drag regions)
@@ -159,7 +161,7 @@ npm run package          # Creates installer in dist-electron/
 | Password storage | bcrypt (12 rounds) on server |
 | Context isolation | Electron contextIsolation on + nodeIntegration off; renderer talks to the OS only through a locked-down preload bridge |
 | Data at rest | Local SQLite in Electron's userData directory |
-| OpenAI key | Stored locally in the client's SQLite `app_config`, sent only to OpenAI — never to the sync server |
+| OpenAI key | Stored only on the server (`OPENAI_API_KEY` in the server `.env`); clients call `POST /api/llm/chat` and never hold the key |
 
 ---
 
@@ -174,7 +176,7 @@ npm run package          # Creates installer in dist-electron/
   4. Manual "Sync Now" button
   5. Right after login or account registration
 
-When offline, all changes are saved locally with `synced=0`. When the network returns, pending entries are automatically pushed to the server. If a conflict exists (same entry edited on two devices), the version with the later `updated_at` wins.
+When offline, all changes are saved locally with `synced=0`. When the network returns, pending entries **and image bytes** are automatically pushed to the server. If a conflict exists (same entry edited on two devices), the version with the later `updated_at` wins. Images ride the same `POST /api/sync` round trip (each carries its own `updated_at`/`deleted` for last-write-wins), so a photo added on one device appears on the others after the next sync.
 
 ---
 
@@ -217,7 +219,8 @@ When offline, all changes are saved locally with `synced=0`. When the network re
 | POST | `/journals` | Yes | Create entry (client-generated UUID) |
 | PUT | `/journals/:id` | Yes | Update entry |
 | DELETE | `/journals/:id` | Yes | Soft-delete entry |
-| POST | `/sync` | Yes | Bidirectional sync |
+| POST | `/sync` | Yes | Bidirectional sync (entries **and** image bytes) |
+| POST | `/llm/chat` | Yes | AI assistant — server proxies `{ model, messages }` to OpenAI using the server's key |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, and §8 for the sync protocol.
 
@@ -231,11 +234,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, an
 - [x] macOS desktop app
 - [x] Linux desktop app
 - [x] Rich-text editor with formatting toolbar (bold/italic/underline/color)
-- [x] Inline image attachments (stored locally)
-- [x] AI assistant over your entries (OpenAI, bring-your-own-key)
+- [x] Image attachments — synced to the server and mirrored to every device
+- [x] Google-Docs-style image placement — drag to position, corner-resize, five text-wrapping modes
+- [x] AI assistant over your entries (OpenAI, key held on the server)
 - [x] Windows Hello biometric unlock
 - [ ] iPhone app (React Native or native Swift)
-- [ ] Sync image attachments to the server (currently local-only)
 - [ ] Journal search (full-text search via SQLite FTS5)
 - [ ] Journal tags / categories
 - [ ] Export to PDF / Markdown files

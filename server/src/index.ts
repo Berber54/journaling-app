@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth.js';
 import { healthRouter } from './routes/health.js';
 import { journalsRouter } from './routes/journals.js';
 import { syncRouter } from './routes/sync.js';
+import { llmRouter } from './routes/llm.js';
 
 const app = express();
 
@@ -20,13 +21,15 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(express.json({ limit: '10mb' }));
+// 50mb: the sync payload now carries base64 image bytes as well as entries.
+app.use(express.json({ limit: '50mb' }));
 app.use(requestLogger);
 
 app.use('/api/auth', authRouter);
 app.use('/api/journals', journalsRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/sync', syncRouter);
+app.use('/api/llm', llmRouter);
 
 app.use(errorHandler);
 

@@ -38,7 +38,7 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 4. `src/renderer/styles/global.css` — full design system (no changes needed)
 5. `src/renderer/styles/lock.css` — lock screen styles
 6. `src/renderer/styles/sidebar.css` — sidebar styles
-7. `src/renderer/styles/editor.css` — editor styles
+7. `src/renderer/styles/editor.css` — editor styles (includes the placed-image rules)
 8. `src/renderer/styles/chat.css` — AI Assistant styles
 9. `src/renderer/components/LockScreen.tsx` — PIN lock overlay
 10. `src/renderer/components/Sidebar.tsx` — navigation sidebar
@@ -48,11 +48,49 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 14. `src/renderer/components/Settings.tsx` — app settings
 15. `src/renderer/components/SyncStatus.tsx` — sync indicator
 16. `src/renderer/components/ChatPanel.tsx` — AI Assistant chat panel
-17. `src/renderer/hooks/useJournals.ts` — journal CRUD hook
-18. `src/renderer/hooks/useLock.ts` — lock state hook
-19. `src/renderer/hooks/useSync.ts` — sync status hook
-20. `src/renderer/lib/ipc.ts` — IPC wrapper
-21. `src/renderer/lib/utils.ts` — utility functions
+17. `src/renderer/components/ImageOverlay.tsx` — image selection ring, resize handles, layout bubble
+18. `src/renderer/hooks/useJournals.ts` — journal CRUD hook
+19. `src/renderer/hooks/useLock.ts` — lock state hook
+20. `src/renderer/hooks/useSync.ts` — sync status hook
+21. `src/renderer/lib/ipc.ts` — IPC wrapper
+22. `src/renderer/lib/utils.ts` — utility functions
+23. `src/renderer/lib/docImages.ts` — placed-image model (figure placeholders, hydrate/serialize)
+
+---
+
+## Images Are Placed Objects, Not a Gallery
+
+Do **not** reintroduce the old image strip (`.editor-images`, `.editor-image-add`, an "+ Add image"
+tile below the text). It was replaced because images had no relationship to the text around them.
+Images now work like Google Docs: an **insert-image icon in the top toolbar** drops the image at the
+caret, and from there it is dragged, resized and given a text-wrapping mode.
+
+The five modes, from the bubble toolbar that appears when an image is selected:
+
+| Mode | `data-layout` | Behaviour |
+|---|---|---|
+| In line with text | `inline` | Sits in the text like one very large character |
+| Wrap text | `wrap` | Floats left or right, text flows around it |
+| Break text | `break` | Own line, text above and below (**the default on insert**) |
+| Behind text | `behind` | Free-positioned, text paints on top |
+| In front of text | `front` | Free-positioned, paints on top of the text |
+
+Two things must survive the copy, or the feature breaks in ways that are easy to miss:
+
+- **`.editor-content` keeps `position: relative` *and* `isolation: isolate`.** The "behind text"
+  mode uses `z-index: -1`; without its own stacking context the image sinks behind the opaque
+  `.main-content` background and disappears entirely.
+- **The overlay lives inside `.editor-surface`, not the scroll container.** That is what keeps the
+  selection ring and handles glued to the image while the entry scrolls.
+
+Placement lives in the entry HTML (`<figure class="doc-image" data-image-id … data-layout …>`); the
+bytes stay in the `journal_images` table and are patched in at load time. See `../ARCHITECTURE.md`
+§12. No main-process, preload or IPC work is involved — `image:add` / `image:list` / `image:delete`
+are unchanged.
+
+Chromium renders identically on Linux, so **no Linux-specific changes are needed here**. The one
+thing to confirm on a Linux box is pointer behaviour under your compositor (X11 and Wayland both):
+drag, drop and corner-resize all run on `pointerdown`/`pointermove`/`pointerup`.
 
 ---
 
@@ -66,5 +104,15 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 6. Settings panel with server connection and sync controls
 7. All animations work: fade-in, slide-in, shake, pulse
 8. Scrollbars render with dark theme styling
+9. Toolbar image icon inserts a picture at the caret, selected, on its own line
+10. Clicking an image shows the outline, four corner handles and the layout bubble
+11. Dragging an image shows a blue drop caret and moves it through the text; "behind"/"front"
+    images follow the pointer freely
+12. Corner handles resize; the percentage in the bubble tracks the drag
+13. A "behind text" image stays visible with text drawn over it (not swallowed by the background)
+14. Layout, size and position survive switching entries and restarting the app
+
+> The full per-behaviour checklist lives in `../windows-app/AGENT-IMAGE-PLACEMENT-UPDATE.md` — the
+> Linux app should pass it identically.
 
 > **Next**: Data-sync agent (`agent-linux-data-sync.md`).

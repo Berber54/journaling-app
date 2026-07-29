@@ -183,7 +183,33 @@
   pointer-events: none;
 }
 
+.editor-tool-image {
+  width: 32px;
+}
+
+.editor-toolbar-hint {
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  white-space: nowrap;
+}
+
+/* ─── Writing surface ───────────────────────────────────────── */
+/* The surface is the positioning context for the image selection overlay, so
+   the overlay scrolls with the text instead of having to chase it. */
+.editor-surface {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .editor-content {
+  position: relative;
+  /* Own stacking context, so a "behind text" image (z-index: -1) drops behind
+     the text but not behind the opaque page background. */
+  isolation: isolate;
   flex: 1;
   width: 100%;
   min-height: 300px;
@@ -205,73 +231,211 @@
   pointer-events: none;
 }
 
-/* ─── Image gallery ─────────────────────────────────────────── */
-.editor-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.editor-image {
+/* ─── Placed images ─────────────────────────────────────────── */
+/* Geometry (width / free-position offsets) is written inline by docImages.ts;
+   everything about how the text behaves around the image lives here. */
+figure.doc-image {
+  margin: 0;
+  padding: 0;
   position: relative;
-  width: 148px;
-  height: 148px;
-  border: 1px solid var(--border-default);
-  background: var(--bg-tertiary);
-  overflow: hidden;
+  line-height: 0;
+  max-width: 100%;
+  cursor: grab;
 }
 
-.editor-image img {
+figure.doc-image img {
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+figure.doc-image.doc-image-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+/* Missing bytes: images are local to the device and don't sync (ARCHITECTURE §4.2). */
+figure.doc-image-missing {
+  min-height: 96px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-tertiary);
+}
+
+figure.doc-image-missing::after {
+  content: 'Image not available on this device';
+  display: block;
+  padding: 38px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* In line with text — behaves like one very large character. */
+figure.doc-image[data-layout='inline'] {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 6px;
+}
+
+/* Wrap text — floats to one side, text flows around it. */
+figure.doc-image[data-layout='wrap'] {
   display: block;
 }
 
-.editor-image-remove {
+figure.doc-image[data-layout='wrap'][data-align='left'] {
+  float: left;
+  margin: 6px 22px 10px 0;
+}
+
+figure.doc-image[data-layout='wrap'][data-align='right'] {
+  float: right;
+  margin: 6px 0 10px 22px;
+}
+
+/* Break text — own line, text above and below. */
+figure.doc-image[data-layout='break'] {
+  display: block;
+  clear: both;
+  margin: 18px 0;
+}
+
+figure.doc-image[data-layout='break'][data-align='center'] {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+figure.doc-image[data-layout='break'][data-align='right'] {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* Free-floating — dragged anywhere; z-index decides which side of the text. */
+figure.doc-image[data-layout='behind'],
+figure.doc-image[data-layout='front'] {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
+  margin: 0;
+}
+
+figure.doc-image[data-layout='behind'] {
+  z-index: -1;
+}
+
+figure.doc-image[data-layout='front'] {
+  z-index: 4;
+}
+
+/* ─── Selection overlay ─────────────────────────────────────── */
+.doc-image-overlay {
+  position: absolute;
+  z-index: 20;
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 1px;
+  pointer-events: none;
+}
+
+/* The grab surface sits above the image so a selected image can be dragged
+   even in "behind text" mode, where the text paints over it. */
+.doc-image-grab {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.doc-image-grab:active {
+  cursor: grabbing;
+}
+
+.doc-image-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--accent-primary);
+  pointer-events: auto;
+}
+
+.doc-image-handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.doc-image-handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.doc-image-handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.doc-image-handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+.doc-image-bubble {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(7, 11, 22, 0.82);
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
-  color: var(--text-primary);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  white-space: nowrap;
 }
 
-.editor-image-remove:hover {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
+.doc-image-bubble.below {
+  bottom: auto;
+  top: calc(100% + 10px);
 }
 
-.editor-image-add {
-  width: 148px;
-  height: 148px;
+.doc-image-btn {
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px dashed var(--border-strong);
+  border: 1px solid transparent;
   color: var(--text-secondary);
-  font-family: var(--font-display);
-  font-size: 13px;
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 
-.editor-image-add:hover {
-  border-color: var(--accent-primary);
+.doc-image-btn:hover {
+  border-color: var(--border-strong);
   color: var(--text-primary);
-  background: var(--bg-tertiary);
+}
+
+.doc-image-btn.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+.doc-image-btn-danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.doc-image-bubble-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-default);
+  margin: 0 4px;
+}
+
+.doc-image-size {
+  font-family: var(--font-display);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: center;
+}
+
+/* Where the image will land when dropped. */
+.doc-image-drop {
+  position: absolute;
+  z-index: 15;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px 0 var(--accent-glow);
+  pointer-events: none;
 }
 
 .editor-footer {

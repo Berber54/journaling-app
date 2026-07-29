@@ -23,9 +23,8 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
   const [bioOsAvailable, setBioOsAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(true);
 
-  // OpenAI / AI assistant state
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [keyStored, setKeyStored] = useState(false);
+  // AI assistant state — the API key now lives on the server, so the client
+  // only keeps the preferred model (sent to the server on each request).
   const [aiModel, setAiModel] = useState('gpt-4o');
   const [aiSaved, setAiSaved] = useState(false);
 
@@ -48,28 +47,16 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
       setBioOsAvailable(osBio);
       setBioEnabled(pref !== 'false');
 
-      const key = await window.electronAPI.settingsGet('openai_api_key');
       const model = await window.electronAPI.settingsGet('openai_model');
-      setKeyStored(!!key);
       if (model) setAiModel(model);
     };
     loadSettings();
   }, []);
 
   const handleSaveAi = async () => {
-    if (openaiKey.trim()) {
-      await window.electronAPI.settingsSet('openai_api_key', openaiKey.trim());
-      setKeyStored(true);
-      setOpenaiKey('');
-    }
     await window.electronAPI.settingsSet('openai_model', aiModel);
     setAiSaved(true);
     setTimeout(() => setAiSaved(false), 2000);
-  };
-
-  const handleClearKey = async () => {
-    await window.electronAPI.settingsSet('openai_api_key', '');
-    setKeyStored(false);
   };
 
   const handleToggleBiometric = async () => {
@@ -241,16 +228,10 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Connect an OpenAI API key to chat with an assistant about your journal. The key is
-            stored locally on this device only and is sent only to OpenAI.
+            Chat with an assistant about your journal. The OpenAI API key is held on your server —
+            not on this device — so the assistant works whenever you're connected to the server.
+            Choose the model requests should use.
           </p>
-          <input
-            className="input"
-            type="password"
-            placeholder={keyStored ? '•••••••••• (key saved — enter a new key to replace)' : 'OpenAI API key (sk-...)'}
-            value={openaiKey}
-            onChange={(e) => setOpenaiKey(e.target.value)}
-          />
           <label style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             Default model
             <select
@@ -264,19 +245,11 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
             </select>
           </label>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-primary" onClick={handleSaveAi} disabled={!openaiKey.trim() && keyStored && !aiModel}>
+            <button className="btn btn-primary" onClick={handleSaveAi}>
               Save
             </button>
-            {keyStored && (
-              <button className="btn btn-secondary" onClick={handleClearKey}>
-                Remove key
-              </button>
-            )}
           </div>
           {aiSaved && <p style={{ fontSize: '13px', color: 'var(--success)' }}>Saved</p>}
-          {keyStored && !aiSaved && (
-            <p style={{ fontSize: '13px', color: 'var(--success)' }}>API key is configured</p>
-          )}
         </div>
       </section>
 
