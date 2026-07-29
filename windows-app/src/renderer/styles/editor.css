@@ -183,7 +183,8 @@
   pointer-events: none;
 }
 
-.editor-tool-image {
+.editor-tool-image,
+.editor-tool-video {
   width: 32px;
 }
 
@@ -193,6 +194,11 @@
   color: var(--text-muted);
   font-family: var(--font-display);
   white-space: nowrap;
+}
+
+.editor-toolbar-hint.editor-toolbar-error {
+  color: var(--danger);
+  white-space: normal;
 }
 
 /* ─── Writing surface ───────────────────────────────────────── */
@@ -243,7 +249,8 @@ figure.doc-image {
   cursor: grab;
 }
 
-figure.doc-image img {
+figure.doc-image img,
+figure.doc-image video {
   display: block;
   width: 100%;
   height: auto;
@@ -251,12 +258,23 @@ figure.doc-image img {
   -webkit-user-drag: none;
 }
 
+/* A video needs a working cursor over its native controls, not a grab hand;
+   it's repositioned via the selection overlay's grab strip instead. */
+figure.doc-image[data-media-kind='video'] {
+  cursor: default;
+}
+
+figure.doc-image video {
+  background: #000;
+}
+
 figure.doc-image.doc-image-dragging {
   opacity: 0.45;
   cursor: grabbing;
 }
 
-/* Missing bytes: images are local to the device and don't sync (ARCHITECTURE §4.2). */
+/* Missing bytes: media syncs separately from the entry HTML (ARCHITECTURE §8),
+   so a figure can exist briefly before its bytes arrive on this device. */
 figure.doc-image-missing {
   min-height: 96px;
   border: 1px dashed var(--border-strong);
@@ -272,6 +290,10 @@ figure.doc-image-missing::after {
   font-family: var(--font-display);
   font-size: 12px;
   line-height: 1.4;
+}
+
+figure.doc-image-missing[data-media-kind='video']::after {
+  content: 'Video not available on this device';
 }
 
 /* In line with text — behaves like one very large character. */
@@ -348,6 +370,13 @@ figure.doc-image[data-layout='front'] {
 
 .doc-image-grab:active {
   cursor: grabbing;
+}
+
+/* Video: only the top strip grabs, so the native controls at the bottom of the
+   frame stay clickable while the video is selected. */
+.doc-image-grab-video {
+  inset: 0 0 auto 0;
+  height: 34px;
 }
 
 .doc-image-handle {

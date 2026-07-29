@@ -21,8 +21,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// 50mb: the sync payload now carries base64 image bytes as well as entries.
-app.use(express.json({ limit: '50mb' }));
+// 200mb: the sync payload carries base64 media bytes (images and videos) as
+// well as entries. Videos are much larger than photos, so the ceiling is raised
+// accordingly; the desktop client caps a single video at 100mb before base64.
+app.use(express.json({ limit: '200mb' }));
 app.use(requestLogger);
 
 app.use('/api/auth', authRouter);
