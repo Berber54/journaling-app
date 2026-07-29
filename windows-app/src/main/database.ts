@@ -51,7 +51,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_journals_updated ON journals(updated_at);
   CREATE INDEX IF NOT EXISTS idx_journals_synced ON journals(synced);
   CREATE INDEX IF NOT EXISTS idx_images_journal ON journal_images(journal_id);
-  CREATE INDEX IF NOT EXISTS idx_images_synced ON journal_images(synced);
 `);
 
 // ─── Migration: image sync columns ───────────────────────────
@@ -67,6 +66,10 @@ db.exec(`
   if (!has('synced')) db.exec('ALTER TABLE journal_images ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
   // Backfill updated_at for legacy rows; leaving synced=0 queues them to upload.
   db.exec("UPDATE journal_images SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL");
+  // Index the sync column here rather than in the schema block above: on an
+  // upgrade the legacy table survives CREATE TABLE IF NOT EXISTS, so indexing
+  // `synced` before the ALTER runs would throw and take the app down at launch.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_images_synced ON journal_images(synced)');
 }
 
 console.log(`[database] Local DB initialized at ${DB_PATH}`);
@@ -248,16 +251,50 @@ export function deleteImage(id: string): void {
 
 // ─── Image Sync Helpers ──────────────────────────────────────
 
-export function getPendingSyncImages(): SyncImage[] {
-  const rows = db.prepare('SELECT * FROM journal_images WHERE synced = 0').all() as ImageRow[];
-  return rows.map((r) => ({
-    id: r.id,
-    journal_id: r.journal_id,
-    data: r.data,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-    deleted: r.deleted === 1,
-  }));
+// A sync payload carries base64 image bytes, and the server caps a single
+// request (express.json, 50 MB by default). Default to sending well under that
+// per request so a backlog of photos drains over several requests instead of
+// failing for ever as one oversized POST.
+export const IMAGE_BATCH_BYTES = 20 * 1024 * 1024;
+
+/**
+ * The next batch of images to upload, oldest first, capped at `maxBytes` of
+ * image data. `skipIds` parks images the server has already refused so one
+ * un-syncable photo can't block everything queued behind it.
+ */
+export function getPendingSyncImages(
+  maxBytes: number = IMAGE_BATCH_BYTES,
+  skipIds?: Set<string>
+): SyncImage[] {
+  // Choose the batch from row sizes alone — selecting the bytes of every
+  // pending image just to decide what fits would defeat the point of batching.
+  const sizes = db.prepare(
+    'SELECT id, length(data) AS bytes FROM journal_images WHERE synced = 0 ORDER BY updated_at ASC'
+  ).all() as { id: string; bytes: number }[];
+
+  const ids: string[] = [];
+  let total = 0;
+  for (const row of sizes) {
+    if (skipIds?.has(row.id)) continue;
+    // Always take at least one row: an image larger than the whole budget would
+    // otherwise sit at the head of the queue for ever.
+    if (ids.length > 0 && total + row.bytes > maxBytes) break;
+    total += row.bytes;
+    ids.push(row.id);
+  }
+
+  const stmt = db.prepare('SELECT * FROM journal_images WHERE id = ?');
+  return ids.map((id) => {
+    const r = stmt.get(id) as ImageRow;
+    return {
+      id: r.id,
+      journal_id: r.journal_id,
+      data: r.data,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      deleted: r.deleted === 1,
+    };
+  });
 }
 
 export function getPendingImageCount(): number {

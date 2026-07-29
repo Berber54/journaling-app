@@ -9,6 +9,7 @@ import {
   getPendingImageCount,
   upsertImageFromServer,
   markImagesSynced,
+  IMAGE_BATCH_BYTES,
 } from './database.js';
 import type { AuthResponse, SyncRequest, SyncResponse, SyncStatus } from '../shared/types.js';
 
@@ -143,6 +144,11 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 // ─── Main Sync Function ─────────────────────────────────────
 
+// Images upload a batch at a time (see IMAGE_BATCH_BYTES), so one sync makes as
+// many round trips as it takes to drain the queue. Bounded so a client that
+// keeps being handed work can still finish and report.
+const MAX_SYNC_ROUNDS = 50;
+
 export async function sync(): Promise<{ success: boolean; message: string }> {
   if (isSyncing) return { success: false, message: 'Sync already in progress' };
   if (!isOnline) return { success: false, message: 'Offline' };
@@ -156,65 +162,103 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
   isSyncing = true;
   emitStatus();
 
+  // Both live outside withRetry so a retried attempt keeps what the previous
+  // one learned about what this server will accept.
+  let batchBytes = IMAGE_BATCH_BYTES;
+  const skippedImageIds = new Set<string>();
+
   try {
     const result = await withRetry(async () => {
-      const lastSyncTimestamp = getConfig('last_sync_timestamp');
-      const pendingEntries = getPendingSyncEntries();
-      const pendingImages = getPendingSyncImages();
+      const totals = { sent: 0, sentImages: 0, received: 0, receivedImages: 0, conflicts: 0 };
 
-      const syncRequest: SyncRequest = {
-        lastSyncTimestamp,
-        entries: pendingEntries,
-        images: pendingImages,
-      };
+      for (let round = 0; round < MAX_SYNC_ROUNDS; round++) {
+        const lastSyncTimestamp = getConfig('last_sync_timestamp');
+        const pendingEntries = getPendingSyncEntries();
+        const pendingImages = getPendingSyncImages(batchBytes, skippedImageIds);
 
-      const response = await apiFetch('/sync', {
-        method: 'POST',
-        body: JSON.stringify(syncRequest),
-      });
+        const syncRequest: SyncRequest = {
+          lastSyncTimestamp,
+          entries: pendingEntries,
+          images: pendingImages,
+        };
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || `Sync failed with status ${response.status}`);
+        const response = await apiFetch('/sync', {
+          method: 'POST',
+          body: JSON.stringify(syncRequest),
+        });
+
+        // Too big for this server's upload limit. Halve the batch and try
+        // again; once a batch is a single image there is nothing left to split,
+        // so park that image and keep the rest of the queue moving.
+        if (response.status === 413) {
+          if (pendingImages.length > 1) {
+            batchBytes = Math.max(1, Math.floor(batchBytes / 2));
+            console.warn(
+              `[sync] Server rejected the payload as too large — retrying with ` +
+                `${(batchBytes / 1024 / 1024).toFixed(1)}MB image batches`
+            );
+            continue;
+          }
+          if (pendingImages.length === 1) {
+            skippedImageIds.add(pendingImages[0].id);
+            console.error(
+              `[sync] Image ${pendingImages[0].id} is larger than the server accepts ` +
+                `(${(pendingImages[0].data.length / 1024 / 1024).toFixed(1)}MB) — skipping it; ` +
+                `everything else will still sync`
+            );
+            continue;
+          }
+          throw new Error('Server rejected the sync payload as too large');
+        }
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({} as any));
+          throw new Error(error.message || `Sync failed with status ${response.status}`);
+        }
+
+        const syncResponse: SyncResponse = await response.json();
+
+        // Apply server entries locally
+        for (const entry of syncResponse.entries) {
+          upsertFromServer(entry);
+        }
+
+        // Apply server images locally (bytes + tombstones)
+        for (const image of syncResponse.images ?? []) {
+          upsertImageFromServer(image);
+        }
+
+        // Mark sent entries as synced
+        if (pendingEntries.length > 0) {
+          markEntriesSynced(pendingEntries.map(e => e.id));
+        }
+
+        // Mark sent images as synced
+        if (pendingImages.length > 0) {
+          markImagesSynced(pendingImages.map(im => im.id));
+        }
+
+        // Update last sync timestamp
+        setConfig('last_sync_timestamp', syncResponse.serverTimestamp);
+
+        totals.sent += pendingEntries.length;
+        totals.sentImages += pendingImages.length;
+        totals.received += syncResponse.entries.length;
+        totals.receivedImages += (syncResponse.images ?? []).length;
+        totals.conflicts += syncResponse.conflicts.length;
+
+        // Anything still queued goes out in the next round, so a backlog
+        // clears in one sync rather than one batch every five minutes.
+        if (getPendingImageCount() - skippedImageIds.size <= 0) break;
       }
 
-      const syncResponse: SyncResponse = await response.json();
-
-      // Apply server entries locally
-      for (const entry of syncResponse.entries) {
-        upsertFromServer(entry);
-      }
-
-      // Apply server images locally (bytes + tombstones)
-      for (const image of syncResponse.images ?? []) {
-        upsertImageFromServer(image);
-      }
-
-      // Mark sent entries as synced
-      if (pendingEntries.length > 0) {
-        markEntriesSynced(pendingEntries.map(e => e.id));
-      }
-
-      // Mark sent images as synced
-      if (pendingImages.length > 0) {
-        markImagesSynced(pendingImages.map(im => im.id));
-      }
-
-      // Update last sync timestamp
-      setConfig('last_sync_timestamp', syncResponse.serverTimestamp);
-
-      return {
-        sent: pendingEntries.length,
-        sentImages: pendingImages.length,
-        received: syncResponse.entries.length,
-        receivedImages: (syncResponse.images ?? []).length,
-        conflicts: syncResponse.conflicts.length,
-      };
+      return totals;
     });
 
     console.log(
       `[sync] Complete: sent=${result.sent}(+${result.sentImages} img), ` +
-        `received=${result.received}(+${result.receivedImages} img), conflicts=${result.conflicts}`
+        `received=${result.received}(+${result.receivedImages} img), conflicts=${result.conflicts}` +
+        (skippedImageIds.size > 0 ? `, ${skippedImageIds.size} image(s) too large to send` : '')
     );
     isSyncing = false;
     emitStatus();
@@ -223,6 +267,17 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
     // its list and re-hydrate the open entry's images.
     if ((result.received > 0 || result.receivedImages > 0) && journalsChangedCallback) {
       journalsChangedCallback();
+    }
+
+    // Everything that could sync did, but say so plainly when an image was too
+    // big for the server — it stays pending, and the count would otherwise sit
+    // there with no explanation.
+    if (skippedImageIds.size > 0) {
+      return {
+        success: false,
+        message: `Synced: ${result.sent} sent, ${result.received} received — ` +
+          `${skippedImageIds.size} image(s) exceed the server's upload limit and could not be sent`,
+      };
     }
 
     return {
