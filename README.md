@@ -116,14 +116,15 @@ nano .env  # Set JWT_SECRET, PORT (default 3377), etc.
            # MAX_MEDIA_BYTES caps a single file (default 2 GB).
            # OPENAI_API_KEY enables the AI assistant for every device.
 
-# .env is read once, at startup, from this directory — after editing it:
-sudo systemctl restart custom-journal
-
 # Install as a systemd service
 sudo cp scripts/journal_server.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable journal_server
 sudo systemctl start journal_server
+
+# .env is read once, at startup, and only the copy in this directory counts —
+# so after any later edit to it:
+sudo systemctl restart journal_server
 
 # Verify
 curl http://localhost:3377/api/health
