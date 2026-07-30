@@ -19,7 +19,7 @@ else
   echo "User 'journal' already exists"
 fi
 
-INSTALL_DIR="/opt/custom-journal"
+INSTALL_DIR="/opt/journal_server"
 echo "Installing to ${INSTALL_DIR}..."
 
 sudo mkdir -p "${INSTALL_DIR}"
@@ -44,17 +44,17 @@ fi
 sudo chown -R journal:journal "${INSTALL_DIR}"
 
 echo "Installing systemd service..."
-sudo cp scripts/custom-journal.service /etc/systemd/system/
+sudo cp scripts/journal_server.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable custom-journal
-sudo systemctl start custom-journal
+sudo systemctl enable journal_server
+sudo systemctl start journal_server
 
 echo ""
 echo "=== Installation Complete ==="
-echo "Service status: $(sudo systemctl is-active custom-journal)"
+echo "Service status: $(sudo systemctl is-active journal_server)"
 echo "Server URL: http://$(hostname -I | awk '{print $1}'):3377"
 echo ""
 echo "Useful commands:"
-echo "  sudo systemctl status custom-journal"
-echo "  sudo systemctl restart custom-journal"
-echo "  sudo journalctl -u custom-journal -f"
+echo "  sudo systemctl status journal_server"
+echo "  sudo systemctl restart journal_server"
+echo "  sudo journalctl -u journal_server -f"
