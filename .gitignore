@@ -11,7 +11,10 @@ dist-electron/
 .env.local
 .env.*.local
 
-# Databases (contain real journal content / credentials)
+# Data & Media (contain user media and databases)
+data/
+media/
+server/data/
 *.db
 *.db-shm
 *.db-wal
