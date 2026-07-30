@@ -1,5 +1,5 @@
 {
-  "name": "custom-journal-server",
+  "name": "journal_server",
   "version": "1.0.0",
   "description": "Custom Journal sync server for Raspberry Pi 5",
   "main": "dist/index.js",

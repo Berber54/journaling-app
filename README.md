@@ -69,7 +69,7 @@ custom_journal/
 │   │   └── middleware/      # JWT auth, error handling, logging
 │   └── scripts/
 │       ├── install.sh       # RPi installation script
-│       └── custom-journal.service  # systemd service
+│       └── journal_server.service  # systemd service
 ├── windows-app/             ← Windows Electron app
 │   ├── src/main/            # Main process (Alt+L, blur-lock, IPC)
 │   ├── src/renderer/        # React UI (components, hooks, styles)
@@ -81,8 +81,7 @@ custom_journal/
 │   └── entitlements.*.plist # macOS code signing
 ├── linux-app/               ← Planned (design notes only, no source yet)
 │   ├── src/main/            # Main process (Alt+L, system tray)
-│   ├── src/renderer/        # React UI (identical to Windows)
-│   └── custom-journal.desktop # Freedesktop entry
+│   └── journal_server.desktop # Freedesktop entry
 └── iphone-app/              ← Planned (React Native / Swift)
     └── README.md
 ```
@@ -102,8 +101,8 @@ custom_journal/
 ```bash
 # On your Raspberry Pi:
 cd /opt
-sudo mkdir custom-journal && sudo chown $USER:$USER custom-journal
-cd custom-journal
+sudo mkdir journal_server && sudo chown $USER:$USER journal_server
+cd journal_server
 
 # Copy the server/ folder contents here, then:
 npm install
@@ -121,10 +120,10 @@ nano .env  # Set JWT_SECRET, PORT (default 3377), etc.
 sudo systemctl restart custom-journal
 
 # Install as a systemd service
-sudo cp scripts/custom-journal.service /etc/systemd/system/
+sudo cp scripts/journal_server.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable custom-journal
-sudo systemctl start custom-journal
+sudo systemctl enable journal_server
+sudo systemctl start journal_server
 
 # Verify
 curl http://localhost:3377/api/health

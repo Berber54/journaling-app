@@ -17,22 +17,22 @@
 7. `src/middleware/requestLogger.ts` — HTTP request logger
 8. `src/middleware/errorHandler.ts` — global error handler
 9. `scripts/install.sh` — automated server install script
-10. `scripts/custom-journal.service` — systemd service unit
+10. `scripts/journal_server.service` — systemd service unit
 
 ---
 
 ## Step 1: Initialize Project
 
 ```bash
-mkdir -p /opt/custom-journal
-cd /opt/custom-journal
+mkdir -p /opt/journal_server
+cd /opt/journal_server
 ```
 
 Create **`package.json`**:
 
 ```json
 {
-  "name": "custom-journal-server",
+  "name": "journal_server",
   "version": "1.0.0",
   "description": "Custom Journal sync server for Raspberry Pi 5",
   "main": "dist/index.js",
@@ -409,7 +409,7 @@ else
 fi
 
 # Set up directory
-INSTALL_DIR="/opt/custom-journal"
+INSTALL_DIR="/opt/journal_server"
 echo "Installing to ${INSTALL_DIR}..."
 
 sudo mkdir -p "${INSTALL_DIR}"
@@ -439,27 +439,27 @@ sudo chown -R journal:journal "${INSTALL_DIR}"
 
 # Install and enable systemd service
 echo "Installing systemd service..."
-sudo cp scripts/custom-journal.service /etc/systemd/system/
+sudo cp scripts/journal_server.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable custom-journal
-sudo systemctl start custom-journal
+sudo systemctl enable journal_server
+sudo systemctl start journal_server
 
 echo ""
 echo "=== Installation Complete ==="
-echo "Service status: $(sudo systemctl is-active custom-journal)"
+echo "Service status: $(sudo systemctl is-active journal_server)"
 echo "Server URL: http://$(hostname -I | awk '{print $1}'):3377"
 echo ""
 echo "Useful commands:"
-echo "  sudo systemctl status custom-journal    # Check status"
-echo "  sudo systemctl restart custom-journal   # Restart server"
-echo "  sudo journalctl -u custom-journal -f    # View logs"
+echo "  sudo systemctl status journal_server    # Check status"
+echo "  sudo systemctl restart journal_server   # Restart server"
+echo "  sudo journalctl -u journal_server -f    # View logs"
 ```
 
 ---
 
 ## Step 8: systemd Service File
 
-Create **`scripts/custom-journal.service`**:
+Create **`scripts/journal_server.service`**:
 
 ```ini
 [Unit]
@@ -471,7 +471,7 @@ Documentation=https://github.com/your-user/custom-journal
 Type=simple
 User=journal
 Group=journal
-WorkingDirectory=/opt/custom-journal
+WorkingDirectory=/opt/journal_server
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
@@ -484,7 +484,7 @@ Environment=PORT=3377
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/custom-journal/data /opt/custom-journal/logs
+ReadWritePaths=/opt/journal_server/data /opt/journal_server/logs
 PrivateTmp=true
 
 [Install]
@@ -498,7 +498,7 @@ WantedBy=multi-user.target
 Run these commands to create the full folder tree:
 
 ```bash
-cd /opt/custom-journal
+cd /opt/journal_server
 mkdir -p src/middleware src/routes src/services src/shared scripts data
 ```
 

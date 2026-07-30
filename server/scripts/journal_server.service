@@ -7,7 +7,7 @@ Documentation=https://github.com/your-user/custom-journal
 Type=simple
 User=journal
 Group=journal
-WorkingDirectory=/opt/custom-journal
+WorkingDirectory=/opt/journal_server
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
@@ -19,7 +19,7 @@ Environment=PORT=3377
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/custom-journal/data /opt/custom-journal/logs
+ReadWritePaths=/opt/journal_server/data /opt/journal_server/logs
 PrivateTmp=true
 
 [Install]
