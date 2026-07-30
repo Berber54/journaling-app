@@ -1,18 +1,24 @@
 /**
- * Document images — Google-Docs-style image placement inside the editor.
+ * Document media — Google-Docs-style placement of photos and video in the
+ * editor.
  *
- * The image *bytes* stay in the `journal_images` table (local to the device).
- * The entry HTML only carries a placeholder recording **where** the image sits
+ * The bytes live in the media store on disk (see main/mediaStore.ts). The entry
+ * HTML only carries a placeholder recording **which** file, **where** it sits,
  * and **how** the text behaves around it:
  *
- *   <figure class="doc-image" data-image-id="…" data-layout="break"
- *           data-align="center" data-width="60" contenteditable="false">
- *     <img alt="">
+ *   <figure class="doc-image" data-image-id="…" data-kind="video"
+ *           data-layout="break" data-align="center" data-width="60"
+ *           contenteditable="false">
+ *     <video></video>
  *   </figure>
  *
  * The `src` and the positioning styles are added when an entry is loaded
- * (`hydrateImages`) and stripped again before saving (`serializeContent`), so
+ * (`hydrateMedia`) and stripped again before saving (`serializeContent`), so
  * stored entries stay small and their HTML stays canonical.
+ *
+ * `data-image-id` keeps its v1 name: every entry already written uses it, and
+ * renaming the attribute would orphan the media in all of them. A figure with no
+ * `data-kind` is an image, which is exactly what those older entries hold.
  */
 
 /** How text behaves around an image — mirrors the Google Docs options. */
@@ -109,16 +115,25 @@ export function applyFigureStyle(fig: HTMLElement): void {
   }
 }
 
-export function createFigure(imageId: string, state?: Partial<FigureState>): HTMLElement {
+/** Media kind a figure holds. Absent `data-kind` means image (v1 entries). */
+export type FigureKind = 'image' | 'video';
+
+export function figureKind(fig: HTMLElement): FigureKind {
+  return fig.dataset.kind === 'video' ? 'video' : 'image';
+}
+
+export function createFigure(
+  imageId: string,
+  kind: FigureKind = 'image',
+  state?: Partial<FigureState>
+): HTMLElement {
   const fig = document.createElement('figure');
   fig.className = 'doc-image';
   fig.dataset.imageId = imageId;
+  if (kind === 'video') fig.dataset.kind = 'video';
   fig.setAttribute('contenteditable', 'false');
 
-  const img = document.createElement('img');
-  img.alt = '';
-  img.draggable = false;
-  fig.appendChild(img);
+  fig.appendChild(createMediaElement(kind));
 
   writeFigure(fig, {
     layout: DEFAULT_LAYOUT,
@@ -139,42 +154,85 @@ export function allFigures(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FIGURE_SELECTOR));
 }
 
+function createMediaElement(kind: FigureKind): HTMLElement {
+  if (kind === 'video') {
+    const video = document.createElement('video');
+    video.controls = true;
+    // Enough to render a first frame and know the duration without pulling the
+    // whole file; the rest streams over journal-media:// when the user hits play.
+    video.preload = 'metadata';
+    video.draggable = false;
+    return video;
+  }
+  const img = document.createElement('img');
+  img.alt = '';
+  img.draggable = false;
+  return img;
+}
+
+/** One entry's media, keyed by id — what `hydrateMedia` draws from. */
+export interface MediaSource {
+  /** `journal-media://<id>`, or absent while the bytes are still arriving. */
+  url: string;
+  kind: FigureKind;
+  available: boolean;
+}
+
 /**
- * Fill in the `src` of every placeholder from the local image store and apply
- * its geometry. Images added on another device don't sync (see ARCHITECTURE
- * §4.2), so a placeholder with no local bytes is flagged rather than left as a
- * broken image.
+ * Point every placeholder at its file and apply its geometry.
+ *
+ * A figure whose bytes haven't reached this device yet (still downloading, or
+ * added on another device that hasn't finished uploading) is flagged rather than
+ * left as a broken image — the file is coming, and the next sync will fill it in.
  */
-export function hydrateImages(root: HTMLElement, srcById: Map<string, string>): void {
+export function hydrateMedia(root: HTMLElement, byId: Map<string, MediaSource>): void {
   for (const fig of allFigures(root)) {
     const id = fig.dataset.imageId;
-    const img = fig.querySelector('img');
-    if (!id || !img) continue;
-    const src = srcById.get(id);
-    if (src) {
-      img.setAttribute('src', src);
-      fig.classList.remove('doc-image-missing');
-    } else {
-      img.removeAttribute('src');
-      fig.classList.add('doc-image-missing');
+    if (!id) continue;
+
+    const source = byId.get(id);
+    const kind = source?.kind ?? figureKind(fig);
+
+    // An entry written on another device may say "video" in its HTML while this
+    // element was built as an image (or vice versa) — rebuild it to match.
+    let element = fig.querySelector('img, video') as HTMLElement | null;
+    const wanted = kind === 'video' ? 'VIDEO' : 'IMG';
+    if (!element || element.tagName !== wanted) {
+      element?.remove();
+      element = createMediaElement(kind);
+      fig.insertBefore(element, fig.firstChild);
     }
-    img.setAttribute('alt', '');
-    (img as HTMLImageElement).draggable = false;
+    if (kind === 'video') fig.dataset.kind = 'video';
+    else delete fig.dataset.kind;
+
+    if (source?.available) {
+      element.setAttribute('src', source.url);
+      fig.classList.remove('doc-image-missing', 'doc-image-pending');
+    } else {
+      element.removeAttribute('src');
+      // Known to exist but not here yet vs referenced and simply gone.
+      fig.classList.toggle('doc-image-pending', source !== undefined);
+      fig.classList.toggle('doc-image-missing', source === undefined);
+    }
+
+    fig.dataset.kindLabel = kind;
+    (element as HTMLImageElement).draggable = false;
     fig.setAttribute('contenteditable', 'false');
     applyFigureStyle(fig);
   }
 }
 
-/** Read the editor surface back out as storable HTML (no base64, no styles). */
+/** Read the editor surface back out as storable HTML (no srcs, no styles). */
 export function serializeContent(root: HTMLElement): string {
   const clone = root.cloneNode(true) as HTMLElement;
   for (const fig of allFigures(clone)) {
     fig.className = 'doc-image';
     fig.removeAttribute('style');
-    const img = fig.querySelector('img');
-    if (img) {
-      img.removeAttribute('src');
-      img.removeAttribute('style');
+    delete fig.dataset.kindLabel;
+    const element = fig.querySelector('img, video');
+    if (element) {
+      element.removeAttribute('src');
+      element.removeAttribute('style');
     }
   }
   return clone.innerHTML;

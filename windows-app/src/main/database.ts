@@ -3,7 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import type { JournalEntry, SyncImage } from '../shared/types.js';
+import * as mediaStore from './mediaStore.js';
+import type { JournalEntry, JournalMedia, MediaKind, MediaRecord } from '../shared/types.js';
 
 // ─── Database Setup ──────────────────────────────────────────
 
@@ -48,9 +49,25 @@ db.exec(`
     synced INTEGER NOT NULL DEFAULT 0
   );
 
+  CREATE TABLE IF NOT EXISTS journal_media (
+    id TEXT PRIMARY KEY,
+    journal_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'image',
+    mime TEXT NOT NULL DEFAULT 'application/octet-stream',
+    bytes INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    synced INTEGER NOT NULL DEFAULT 0,
+    uploaded INTEGER NOT NULL DEFAULT 0
+  );
+
   CREATE INDEX IF NOT EXISTS idx_journals_updated ON journals(updated_at);
   CREATE INDEX IF NOT EXISTS idx_journals_synced ON journals(synced);
   CREATE INDEX IF NOT EXISTS idx_images_journal ON journal_images(journal_id);
+  CREATE INDEX IF NOT EXISTS idx_media_journal ON journal_media(journal_id);
+  CREATE INDEX IF NOT EXISTS idx_media_synced ON journal_media(synced);
 `);
 
 // ─── Migration: image sync columns ───────────────────────────
@@ -205,125 +222,230 @@ export function markEntriesSynced(ids: string[]): void {
   transaction();
 }
 
-// ─── Journal Images ──────────────────────────────────────────
+// ─── Media (images + video) ──────────────────────────────────
+// Metadata lives here, the bytes live on disk in the media store. That split is
+// what lets an entry hold video: nothing base64-encodes a file into SQLite or
+// into a sync payload any more (protocol v2 — ARCHITECTURE §8).
 
-export interface JournalImage {
+interface MediaRow {
   id: string;
   journal_id: string;
-  data: string; // data: URL (base64-encoded image)
-  created_at: string;
-}
-
-interface ImageRow {
-  id: string;
-  journal_id: string;
-  data: string;
+  kind: MediaKind;
+  mime: string;
+  bytes: number;
+  sha256: string;
   created_at: string;
   updated_at: string;
   deleted: number;
+  /** Has this row's metadata been pushed to the server? */
   synced: number;
+  /** Has the server confirmed it holds every byte? */
+  uploaded: number;
 }
 
-export function addImage(journalId: string, data: string): JournalImage {
-  const id = uuidv4();
+function rowToRecord(row: MediaRow): MediaRecord {
+  return {
+    id: row.id,
+    journal_id: row.journal_id,
+    kind: row.kind,
+    mime: row.mime,
+    bytes: row.bytes,
+    sha256: row.sha256,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted: row.deleted === 1,
+  };
+}
+
+// `available` is read from the filesystem rather than a column: the bytes are
+// either fully here or they are not, and the file itself is the only honest
+// answer to that.
+function rowToJournalMedia(row: MediaRow): JournalMedia {
+  return {
+    id: row.id,
+    journal_id: row.journal_id,
+    kind: row.kind,
+    mime: row.mime,
+    bytes: row.bytes,
+    url: `journal-media://${row.id}`,
+    available: mediaStore.hasComplete(row.id),
+    created_at: row.created_at,
+  };
+}
+
+/** Register a file that has already been copied into the media store. */
+export function addMedia(journalId: string, imported: mediaStore.ImportedMedia): JournalMedia {
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO journal_images (id, journal_id, data, created_at, updated_at, deleted, synced)
-     VALUES (?, ?, ?, ?, ?, 0, 0)`
-  ).run(id, journalId, data, now, now);
-  return { id, journal_id: journalId, data, created_at: now };
+    `INSERT INTO journal_media
+       (id, journal_id, kind, mime, bytes, sha256, created_at, updated_at, deleted, synced, uploaded)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)`
+  ).run(imported.id, journalId, imported.kind, imported.mime, imported.bytes, imported.sha256, now, now);
+  return rowToJournalMedia(getMediaRow(imported.id)!);
 }
 
-export function getImages(journalId: string): JournalImage[] {
-  return db.prepare(
-    'SELECT id, journal_id, data, created_at FROM journal_images WHERE journal_id = ? AND deleted = 0 ORDER BY created_at ASC'
-  ).all(journalId) as JournalImage[];
+export function getMediaRow(id: string): MediaRow | null {
+  return (db.prepare('SELECT * FROM journal_media WHERE id = ?').get(id) as MediaRow | undefined) ?? null;
 }
 
-// Soft delete: keep a tombstone (bytes cleared) with synced = 0 so the removal
-// propagates to the server and other devices, mirroring how journals delete.
-export function deleteImage(id: string): void {
-  const now = new Date().toISOString();
-  db.prepare(
-    "UPDATE journal_images SET deleted = 1, data = '', updated_at = ?, synced = 0 WHERE id = ?"
-  ).run(now, id);
+export function getMedia(journalId: string): JournalMedia[] {
+  const rows = db.prepare(
+    'SELECT * FROM journal_media WHERE journal_id = ? AND deleted = 0 ORDER BY created_at ASC'
+  ).all(journalId) as MediaRow[];
+  return rows.map(rowToJournalMedia);
 }
-
-// ─── Image Sync Helpers ──────────────────────────────────────
-
-// A sync payload carries base64 image bytes, and the server caps a single
-// request (express.json, 50 MB by default). Default to sending well under that
-// per request so a backlog of photos drains over several requests instead of
-// failing for ever as one oversized POST.
-export const IMAGE_BATCH_BYTES = 20 * 1024 * 1024;
 
 /**
- * The next batch of images to upload, oldest first, capped at `maxBytes` of
- * image data. `skipIds` parks images the server has already refused so one
- * un-syncable photo can't block everything queued behind it.
+ * Soft delete: keep a tombstone so the removal reaches every device, and drop
+ * the local bytes straight away — the user asked for the file to be gone.
  */
-export function getPendingSyncImages(
-  maxBytes: number = IMAGE_BATCH_BYTES,
-  skipIds?: Set<string>
-): SyncImage[] {
-  // Choose the batch from row sizes alone — selecting the bytes of every
-  // pending image just to decide what fits would defeat the point of batching.
-  const sizes = db.prepare(
-    'SELECT id, length(data) AS bytes FROM journal_images WHERE synced = 0 ORDER BY updated_at ASC'
-  ).all() as { id: string; bytes: number }[];
-
-  const ids: string[] = [];
-  let total = 0;
-  for (const row of sizes) {
-    if (skipIds?.has(row.id)) continue;
-    // Always take at least one row: an image larger than the whole budget would
-    // otherwise sit at the head of the queue for ever.
-    if (ids.length > 0 && total + row.bytes > maxBytes) break;
-    total += row.bytes;
-    ids.push(row.id);
-  }
-
-  const stmt = db.prepare('SELECT * FROM journal_images WHERE id = ?');
-  return ids.map((id) => {
-    const r = stmt.get(id) as ImageRow;
-    return {
-      id: r.id,
-      journal_id: r.journal_id,
-      data: r.data,
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-      deleted: r.deleted === 1,
-    };
-  });
+export function deleteMedia(id: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    'UPDATE journal_media SET deleted = 1, bytes = 0, sha256 = \'\', updated_at = ?, synced = 0 WHERE id = ?'
+  ).run(now, id);
+  mediaStore.removeLocal(id);
 }
 
-export function getPendingImageCount(): number {
-  const result = db.prepare('SELECT COUNT(*) as count FROM journal_images WHERE synced = 0').get() as { count: number };
-  return result.count;
+// ─── Media sync helpers ──────────────────────────────────────
+
+/** Metadata waiting to be pushed. Small records, so no batching is needed. */
+export function getPendingSyncMedia(): MediaRecord[] {
+  const rows = db.prepare('SELECT * FROM journal_media WHERE synced = 0 ORDER BY updated_at ASC').all() as MediaRow[];
+  return rows.map(rowToRecord);
 }
 
-export function upsertImageFromServer(image: SyncImage): void {
-  const existing = db.prepare('SELECT id FROM journal_images WHERE id = ?').get(image.id);
-  if (existing) {
-    db.prepare(
-      `UPDATE journal_images SET journal_id = ?, data = ?, created_at = ?, updated_at = ?, deleted = ?, synced = 1
-       WHERE id = ?`
-    ).run(image.journal_id, image.data, image.created_at, image.updated_at, image.deleted ? 1 : 0, image.id);
-  } else {
-    db.prepare(
-      `INSERT INTO journal_images (id, journal_id, data, created_at, updated_at, deleted, synced)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`
-    ).run(image.id, image.journal_id, image.data, image.created_at, image.updated_at, image.deleted ? 1 : 0);
-  }
-}
-
-export function markImagesSynced(ids: string[]): void {
-  const stmt = db.prepare('UPDATE journal_images SET synced = 1 WHERE id = ?');
+export function markMediaSynced(ids: string[]): void {
+  const stmt = db.prepare('UPDATE journal_media SET synced = 1 WHERE id = ?');
   const transaction = db.transaction(() => {
     for (const id of ids) stmt.run(id);
   });
   transaction();
 }
+
+export function upsertMediaFromServer(record: MediaRecord): void {
+  const existing = getMediaRow(record.id);
+
+  if (existing) {
+    db.prepare(
+      `UPDATE journal_media
+         SET journal_id = ?, kind = ?, mime = ?, bytes = ?, sha256 = ?,
+             created_at = ?, updated_at = ?, deleted = ?, synced = 1,
+             uploaded = ?
+       WHERE id = ?`
+    ).run(
+      record.journal_id, record.kind, record.mime, record.bytes, record.sha256,
+      record.created_at, record.updated_at, record.deleted ? 1 : 0,
+      // The server is telling us about this file, so it has the bytes — unless
+      // it's a tombstone, where there are none to have.
+      record.deleted ? 0 : 1,
+      record.id
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO journal_media
+         (id, journal_id, kind, mime, bytes, sha256, created_at, updated_at, deleted, synced, uploaded)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+    ).run(
+      record.id, record.journal_id, record.kind, record.mime, record.bytes, record.sha256,
+      record.created_at, record.updated_at, record.deleted ? 1 : 0, record.deleted ? 0 : 1
+    );
+  }
+
+  // Deleted elsewhere — reclaim the space here too.
+  if (record.deleted) mediaStore.removeLocal(record.id);
+}
+
+/** Files whose bytes this device holds but the server does not yet. */
+export function getMediaNeedingUpload(): MediaRecord[] {
+  const rows = db.prepare(
+    'SELECT * FROM journal_media WHERE deleted = 0 AND uploaded = 0 AND bytes > 0 ORDER BY created_at ASC'
+  ).all() as MediaRow[];
+  // Only offer files we can actually read in full; a half-downloaded file has
+  // nothing to contribute.
+  return rows.filter((row) => mediaStore.localBytes(row.id) === row.bytes).map(rowToRecord);
+}
+
+/** Files that exist on the server but aren't (fully) on this device yet. */
+export function getMediaNeedingDownload(): MediaRecord[] {
+  const rows = db.prepare(
+    'SELECT * FROM journal_media WHERE deleted = 0 AND bytes > 0 AND uploaded = 1 ORDER BY created_at ASC'
+  ).all() as MediaRow[];
+  return rows.filter((row) => mediaStore.localBytes(row.id) !== row.bytes).map(rowToRecord);
+}
+
+export function markMediaUploaded(id: string): void {
+  db.prepare('UPDATE journal_media SET uploaded = 1 WHERE id = ?').run(id);
+}
+
+/** Metadata still to push. Counted in the pending badge alongside entries. */
+export function getPendingMediaCount(): number {
+  const result = db.prepare('SELECT COUNT(*) as count FROM journal_media WHERE synced = 0').get() as { count: number };
+  return result.count;
+}
+
+/** Files whose bytes still have to move, in either direction. */
+export function getPendingTransferCount(): number {
+  return getMediaNeedingUpload().length + getMediaNeedingDownload().length;
+}
+
+// ─── Migration: v1 base64 images → media store ───────────────
+// v1 kept image bytes as base64 text in `journal_images`. Move each one into the
+// media store as a file and give it a media row, so old photos and new videos
+// are the same kind of thing from here on.
+//
+// The original rows are left in place: they cost disk, but they are also the
+// only copy an older build of the app could read, and destroying them to save
+// space is not a trade this migration gets to make on the user's behalf.
+function migrateLegacyImagesToMedia(): void {
+  const legacy = db.prepare(`
+    SELECT i.* FROM journal_images i
+    LEFT JOIN journal_media m ON m.id = i.id
+    WHERE m.id IS NULL
+  `).all() as { id: string; journal_id: string; data: string; created_at: string; updated_at: string; deleted: number }[];
+
+  if (legacy.length === 0) return;
+
+  const insert = db.prepare(
+    `INSERT INTO journal_media
+       (id, journal_id, kind, mime, bytes, sha256, created_at, updated_at, deleted, synced, uploaded)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`
+  );
+
+  let migrated = 0;
+  let tombstoned = 0;
+
+  for (const row of legacy) {
+    if (row.deleted === 1 || !row.data) {
+      insert.run(row.id, row.journal_id, 'image', 'application/octet-stream', 0, '',
+        row.created_at, row.updated_at || row.created_at, 1);
+      tombstoned++;
+      continue;
+    }
+
+    const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(row.data);
+    if (!match) {
+      console.warn(`[media] Legacy image ${row.id} is not a readable data URL — left alone`);
+      continue;
+    }
+
+    const [, rawMime, isBase64, payload] = match;
+    const mime = rawMime || 'application/octet-stream';
+    const buf = isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8');
+    const sha256 = mediaStore.writeBlobSync(row.id, buf);
+
+    insert.run(row.id, row.journal_id, mediaStore.kindForMime(mime), mime, buf.length, sha256,
+      row.created_at, row.updated_at || row.created_at, 0);
+    migrated++;
+  }
+
+  console.log(
+    `[media] Migrated ${migrated} stored image(s) to the media store` +
+      (tombstoned > 0 ? `, ${tombstoned} tombstone(s)` : '')
+  );
+}
+
+migrateLegacyImagesToMedia();
 
 // ─── App Config ──────────────────────────────────────────────
 

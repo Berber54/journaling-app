@@ -55,6 +55,27 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_images_user_updated ON journal_images(user_id, updated_at);
   CREATE INDEX IF NOT EXISTS idx_images_journal ON journal_images(journal_id);
+
+  -- Media metadata (protocol v2). The bytes live on disk under config.mediaPath,
+  -- never in this database and never inside a sync payload — that is what lets
+  -- an entry carry video. Rows sync with the same last-write-wins bookkeeping as
+  -- journals: updated_at is the clock, deleted=1 is a tombstone.
+  CREATE TABLE IF NOT EXISTS media (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    journal_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'image',
+    mime TEXT NOT NULL DEFAULT 'application/octet-stream',
+    bytes INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_media_user_updated ON media(user_id, updated_at);
+  CREATE INDEX IF NOT EXISTS idx_media_journal ON media(journal_id);
 `);
 
 console.log(`[database] Connected to SQLite at ${config.dbPath}`);

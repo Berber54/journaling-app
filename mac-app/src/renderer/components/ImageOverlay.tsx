@@ -1,5 +1,5 @@
 import React from 'react';
-import type { FigureState, ImageAlign, ImageLayout } from '../lib/docImages';
+import type { FigureKind, FigureState, ImageAlign, ImageLayout } from '../lib/docImages';
 import { allowedAligns, isFloating } from '../lib/docImages';
 
 export interface OverlayRect {
@@ -12,6 +12,8 @@ export interface OverlayRect {
 interface ImageOverlayProps {
   rect: OverlayRect;
   state: FigureState;
+  /** Video keeps its bottom strip clear so the player controls stay usable. */
+  kind: FigureKind;
   onDragStart: (e: React.PointerEvent) => void;
   onResizeStart: (corner: Corner, e: React.PointerEvent) => void;
   onLayoutChange: (layout: ImageLayout) => void;
@@ -40,6 +42,7 @@ const ALIGN_LABEL: Record<ImageAlign, string> = {
 export default function ImageOverlay({
   rect,
   state,
+  kind,
   onDragStart,
   onResizeStart,
   onLayoutChange,
@@ -52,7 +55,7 @@ export default function ImageOverlay({
 
   return (
     <div
-      className="doc-image-overlay"
+      className={`doc-image-overlay ${kind === 'video' ? 'doc-image-overlay-video' : ''}`}
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
     >
       <div
@@ -60,8 +63,8 @@ export default function ImageOverlay({
         onPointerDown={onDragStart}
         title={
           isFloating(state.layout)
-            ? 'Drag to move the image anywhere'
-            : 'Drag to move the image through the text'
+            ? `Drag to move the ${kind} anywhere`
+            : `Drag to move the ${kind} through the text`
         }
       />
 

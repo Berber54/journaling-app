@@ -9,10 +9,11 @@ import {
   getConfig,
   setConfig,
   getAllConfig,
-  addImage,
-  getImages,
-  deleteImage,
+  addMedia,
+  getMedia,
+  deleteMedia,
 } from './database.js';
+import { importFile } from './mediaStore.js';
 import { sync, login, register, getSyncStatus, onStatusChange, onJournalsChanged } from './syncService.js';
 import { checkBiometricAvailability, verifyBiometric } from './biometric.js';
 import { chatWithLLM } from './llmService.js';
@@ -71,21 +72,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     debouncedSync();
   });
 
-  // ─── Image Handlers ────────────────────────────────────────
+  // ─── Media Handlers (images + video) ───────────────────────
 
-  ipcMain.handle('image:add', (_event, journalId: string, data: string) => {
-    const image = addImage(journalId, data);
-    debouncedSync(); // push the new image bytes to the server
-    return image;
+  // The renderer hands over a path, not bytes: a video has no business crossing
+  // the IPC bridge, and copying it here keeps the entry's own copy stable even
+  // if the user later moves or deletes the original file.
+  ipcMain.handle('media:add', async (_event, journalId: string, sourcePath: string) => {
+    const imported = await importFile(sourcePath);
+    const media = addMedia(journalId, imported);
+    debouncedSync(); // metadata first, then the bytes follow
+    return media;
   });
 
-  ipcMain.handle('image:list', (_event, journalId: string) => {
-    return getImages(journalId);
+  ipcMain.handle('media:list', (_event, journalId: string) => {
+    return getMedia(journalId);
   });
 
-  ipcMain.handle('image:delete', (_event, id: string) => {
-    deleteImage(id);
-    debouncedSync(); // propagate the tombstone so the image is removed everywhere
+  ipcMain.handle('media:delete', (_event, id: string) => {
+    deleteMedia(id);
+    debouncedSync(); // propagate the tombstone so it's removed everywhere
   });
 
   // ─── Sync Handlers ─────────────────────────────────────────

@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import type { JournalEntry } from '../../shared/types';
+import type { JournalEntry, JournalMedia } from '../../shared/types';
 import DateTimePicker from './DateTimePicker';
 import ImageOverlay, { type Corner, type OverlayRect } from './ImageOverlay';
 import {
+  type FigureKind,
   type FigureState,
   type ImageAlign,
   type ImageLayout,
+  type MediaSource,
   DEFAULT_LAYOUT,
   MAX_WIDTH,
   MIN_WIDTH,
   allFigures,
   createFigure,
+  figureKind,
   findFigure,
-  hydrateImages,
+  hydrateMedia,
   isFloating,
   readFigure,
   referencedImageIds,
@@ -20,6 +23,11 @@ import {
   writeFigure,
 } from '../lib/docImages';
 import '../styles/editor.css';
+
+/** IPC payload → what hydrateMedia needs, keyed by id. */
+function toMediaMap(files: JournalMedia[]): Map<string, MediaSource> {
+  return new Map(files.map((f) => [f.id, { url: f.url, kind: f.kind, available: f.available }]));
+}
 
 interface JournalEditorProps {
   entry: JournalEntry;
@@ -87,9 +95,11 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const contentRef = useRef<HTMLDivElement | null>(null);
   const colorInputRef = useRef<HTMLInputElement | null>(null);
 
-  // id → data: URL for every image belonging to this entry. The document HTML
-  // only stores placeholders; the bytes are looked up from here (see docImages).
-  const imagesRef = useRef<Map<string, string>>(new Map());
+  // id → where to read each of this entry's files. The document HTML only
+  // stores placeholders; the URL and kind are looked up from here (see
+  // docImages). Bytes themselves never come through here — a journal-media://
+  // URL lets Chromium stream them, which is what makes video viable.
+  const mediaRef = useRef<Map<string, MediaSource>>(new Map());
   // The last values we handed to the store, so an entry object echoing back
   // from a save doesn't reset the caret (or a drag) mid-edit.
   const savedRef = useRef({ title: entry.title, content: entry.content, journal_date: entry.journal_date });
@@ -142,6 +152,17 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     };
   }, [selectedImageId, refreshOverlay]);
 
+  // Mark the selected figure so CSS can hand pointer events to a video's own
+  // controls. Unselected video ignores clicks, so the first click selects and
+  // drags the figure like any image rather than hitting the scrubber.
+  useLayoutEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    for (const fig of allFigures(root)) {
+      fig.classList.toggle('doc-image-selected', fig.dataset.imageId === selectedImageId);
+    }
+  }, [selectedImageId, entry.id, entry.content]);
+
   // ─── Auto-save (1s debounce) ───────────────────────────────────
   const triggerSave = useCallback((newTitle: string, newContent: string, newDate: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -161,13 +182,13 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
         setSaveStatus('offline');
       }
 
-      // Drop image rows the document no longer references (deleted figures).
+      // Drop files the document no longer references (deleted figures).
       const stillUsed = referencedImageIds(newContent);
-      for (const id of Array.from(imagesRef.current.keys())) {
+      for (const id of Array.from(mediaRef.current.keys())) {
         if (stillUsed.has(id)) continue;
-        imagesRef.current.delete(id);
+        mediaRef.current.delete(id);
         try {
-          await window.electronAPI.imageDelete(id);
+          await window.electronAPI.mediaDelete(id);
         } catch {
           /* best-effort cleanup — the row is harmless if it lingers */
         }
@@ -199,24 +220,24 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       setSelectedImageId(null);
 
       let active = true;
-      window.electronAPI.imageList(entry.id).then((imgs) => {
+      window.electronAPI.mediaList(entry.id).then((files) => {
         const root = contentRef.current;
         if (!active || !root) return;
-        imagesRef.current = new Map(imgs.map((im) => [im.id, im.data]));
+        mediaRef.current = toMediaMap(files);
 
         root.innerHTML = toHtml(entry.content);
 
-        // Entries written before images were placeable kept them in a gallery
+        // Entries written before media were placeable kept them in a gallery
         // below the text. Re-attach any that the document doesn't reference yet
         // so nothing is lost, then persist the migration.
         const referenced = referencedImageIds(root);
-        const strays = imgs.filter((im) => !referenced.has(im.id));
-        for (const im of strays) {
-          root.appendChild(createFigure(im.id, { layout: DEFAULT_LAYOUT }));
+        const strays = files.filter((file) => !referenced.has(file.id));
+        for (const file of strays) {
+          root.appendChild(createFigure(file.id, file.kind, { layout: DEFAULT_LAYOUT }));
           root.appendChild(document.createElement('br'));
         }
 
-        hydrateImages(root, imagesRef.current);
+        hydrateMedia(root, mediaRef.current);
         syncImageCount();
         if (strays.length > 0) {
           triggerSave(entry.title, serializeContent(root), entry.journal_date);
@@ -238,23 +259,21 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     if (entry.content !== savedRef.current.content && contentRef.current) {
       savedRef.current.content = entry.content;
       contentRef.current.innerHTML = toHtml(entry.content);
-      hydrateImages(contentRef.current, imagesRef.current);
+      hydrateMedia(contentRef.current, mediaRef.current);
       syncImageCount();
       setSelectedImageId(null);
     }
   }, [entry.id, entry.title, entry.content, entry.journal_date, triggerSave, syncImageCount]);
 
-  // When a sync pulls image bytes (or tombstones) down, re-fetch this entry's
-  // images and re-hydrate. This covers the case where the entry's HTML already
-  // referenced an image placed on another device but the bytes only just
-  // arrived — the "image not available" figure fills in without reopening.
+  // When a sync brings files down (or tombstones them), re-read this entry's
+  // media and re-hydrate. This is what turns a "still downloading" placeholder
+  // into the finished photo or a playable video without reopening the entry.
   useEffect(() => {
     const unsubscribe = window.electronAPI.onJournalsChanged(async () => {
       const root = contentRef.current;
       if (!root) return;
-      const imgs = await window.electronAPI.imageList(entry.id);
-      imagesRef.current = new Map(imgs.map((im) => [im.id, im.data]));
-      hydrateImages(root, imagesRef.current);
+      mediaRef.current = toMediaMap(await window.electronAPI.mediaList(entry.id));
+      hydrateMedia(root, mediaRef.current);
       syncImageCount();
     });
     return unsubscribe;
@@ -296,10 +315,10 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     fileInputRef.current?.click();
   };
 
-  const insertFigure = (imageId: string) => {
+  const insertFigure = (imageId: string, kind: FigureKind) => {
     const root = contentRef.current;
     if (!root) return;
-    const fig = createFigure(imageId);
+    const fig = createFigure(imageId, kind);
     const range = savedRangeRef.current;
 
     if (range && root.contains(range.startContainer)) {
@@ -317,7 +336,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     after.collapse(true);
     savedRangeRef.current = after.cloneRange();
 
-    hydrateImages(root, imagesRef.current);
+    hydrateMedia(root, mediaRef.current);
     syncImageCount();
   };
 
@@ -327,15 +346,17 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
 
     let lastId: string | null = null;
     for (const file of files) {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      const saved = await window.electronAPI.imageAdd(entry.id, dataUrl);
-      imagesRef.current.set(saved.id, saved.data ?? dataUrl);
-      insertFigure(saved.id);
+      // Hand over the path and let the main process copy the file. Reading a
+      // video into the renderer to base64 it — what v1 did with images — would
+      // mean holding the whole thing in memory twice over.
+      const sourcePath = window.electronAPI.mediaPathForFile(file);
+      if (!sourcePath) {
+        console.error(`[editor] No filesystem path for ${file.name} — skipped`);
+        continue;
+      }
+      const saved = await window.electronAPI.mediaAdd(entry.id, sourcePath);
+      mediaRef.current.set(saved.id, { url: saved.url, kind: saved.kind, available: saved.available });
+      insertFigure(saved.id, saved.kind);
       lastId = saved.id;
     }
 
@@ -761,6 +782,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
           <ImageOverlay
             rect={overlay.rect}
             state={overlay.state}
+            kind={mediaRef.current.get(selectedImageId)?.kind ?? 'image'}
             onDragStart={(e) => {
               e.preventDefault();
               beginDrag(selectedImageId, e.clientX, e.clientY);
@@ -780,7 +802,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}

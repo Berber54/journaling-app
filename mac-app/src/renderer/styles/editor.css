@@ -243,7 +243,8 @@ figure.doc-image {
   cursor: grab;
 }
 
-figure.doc-image img {
+figure.doc-image img,
+figure.doc-image video {
   display: block;
   width: 100%;
   height: auto;
@@ -251,20 +252,54 @@ figure.doc-image img {
   -webkit-user-drag: none;
 }
 
+figure.doc-image video {
+  background: #000;
+  border-radius: 6px;
+}
+
+/* An unselected video ignores the pointer, so a click lands on the figure and
+   selects (or drags) it. Once selected, its controls take clicks again — the
+   overlay's grab layer leaves the bottom strip clear for exactly this. */
+figure.doc-image[data-kind='video'] video {
+  pointer-events: none;
+}
+
+figure.doc-image[data-kind='video'].doc-image-selected video {
+  pointer-events: auto;
+}
+
+.doc-image-overlay-video .doc-image-grab {
+  bottom: 46px;
+}
+
 figure.doc-image.doc-image-dragging {
   opacity: 0.45;
   cursor: grabbing;
 }
 
-/* Missing bytes: images are local to the device and don't sync (ARCHITECTURE §4.2). */
-figure.doc-image-missing {
+/* Bytes not here: either still transferring (pending) or gone (missing). */
+figure.doc-image-missing,
+figure.doc-image-pending {
   min-height: 96px;
   border: 1px dashed var(--border-strong);
   background: var(--bg-tertiary);
 }
 
+figure.doc-image-pending::after {
+  content: 'Downloading…';
+  display: block;
+  padding: 38px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
+figure.doc-image-pending[data-kind='video']::after {
+  content: 'Downloading video…';
+}
+
 figure.doc-image-missing::after {
-  content: 'Image not available on this device';
+  content: 'File not available on this device';
   display: block;
   padding: 38px 12px;
   text-align: center;

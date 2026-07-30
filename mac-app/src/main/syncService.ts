@@ -5,19 +5,27 @@ import {
   getConfig,
   setConfig,
   getPendingSyncCount,
-  getPendingSyncImages,
-  getPendingImageCount,
-  upsertImageFromServer,
-  markImagesSynced,
-  IMAGE_BATCH_BYTES,
+  getPendingSyncMedia,
+  getPendingMediaCount,
+  getPendingTransferCount,
+  upsertMediaFromServer,
+  markMediaSynced,
 } from './database.js';
-import type { AuthResponse, SyncRequest, SyncResponse, SyncStatus } from '../shared/types.js';
+import { transferMedia } from './mediaTransfer.js';
+import type {
+  AuthResponse,
+  MediaTransferProgress,
+  SyncRequest,
+  SyncResponse,
+  SyncStatus,
+} from '../shared/types.js';
 
 // ─── Sync State ──────────────────────────────────────────────
 
 let isSyncing = false;
 let statusCallback: ((status: SyncStatus) => void) | null = null;
 let journalsChangedCallback: (() => void) | null = null;
+let currentTransfer: MediaTransferProgress | null = null;
 
 export function onStatusChange(callback: (status: SyncStatus) => void): void {
   statusCallback = callback;
@@ -40,8 +48,10 @@ export function getSyncStatus(): SyncStatus {
   return {
     online: isOnline,
     lastSync: getConfig('last_sync_timestamp'),
-    pendingCount: getPendingSyncCount() + getPendingImageCount(),
+    pendingCount: getPendingSyncCount() + getPendingMediaCount(),
     syncing: isSyncing,
+    pendingMediaCount: getPendingTransferCount(),
+    transfer: currentTransfer,
   };
 }
 
@@ -144,11 +154,18 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 // ─── Main Sync Function ─────────────────────────────────────
 
-// Images upload a batch at a time (see IMAGE_BATCH_BYTES), so one sync makes as
-// many round trips as it takes to drain the queue. Bounded so a client that
-// keeps being handed work can still finish and report.
-const MAX_SYNC_ROUNDS = 50;
-
+/**
+ * One sync is two phases:
+ *
+ *   1. Metadata — entries and media records go up and down in a single JSON
+ *      request. These are small, so there is nothing to batch: a media record is
+ *      a couple of hundred bytes whether it describes a thumbnail or a film.
+ *   2. Bytes — any photo or video that is on one side and not the other is
+ *      transferred over /api/media, resumably, a chunk at a time.
+ *
+ * Phase 1 first, always: the transfer layer needs both ends to agree on what
+ * files are supposed to exist before it can move any of them.
+ */
 export async function sync(): Promise<{ success: boolean; message: string }> {
   if (isSyncing) return { success: false, message: 'Sync already in progress' };
   if (!isOnline) return { success: false, message: 'Offline' };
@@ -162,130 +179,119 @@ export async function sync(): Promise<{ success: boolean; message: string }> {
   isSyncing = true;
   emitStatus();
 
-  // Both live outside withRetry so a retried attempt keeps what the previous
-  // one learned about what this server will accept.
-  let batchBytes = IMAGE_BATCH_BYTES;
-  const skippedImageIds = new Set<string>();
-
   try {
+    // ─── Phase 1: metadata ───────────────────────────────────
     const result = await withRetry(async () => {
-      const totals = { sent: 0, sentImages: 0, received: 0, receivedImages: 0, conflicts: 0 };
+      const lastSyncTimestamp = getConfig('last_sync_timestamp');
+      const pendingEntries = getPendingSyncEntries();
+      const pendingMedia = getPendingSyncMedia();
 
-      for (let round = 0; round < MAX_SYNC_ROUNDS; round++) {
-        const lastSyncTimestamp = getConfig('last_sync_timestamp');
-        const pendingEntries = getPendingSyncEntries();
-        const pendingImages = getPendingSyncImages(batchBytes, skippedImageIds);
+      const syncRequest: SyncRequest = {
+        lastSyncTimestamp,
+        entries: pendingEntries,
+        // Present even when empty: it is how the server knows this client speaks
+        // v2 and should be answered with media records rather than base64.
+        media: pendingMedia,
+      };
 
-        const syncRequest: SyncRequest = {
-          lastSyncTimestamp,
-          entries: pendingEntries,
-          images: pendingImages,
-        };
+      const response = await apiFetch('/sync', {
+        method: 'POST',
+        body: JSON.stringify(syncRequest),
+      });
 
-        const response = await apiFetch('/sync', {
-          method: 'POST',
-          body: JSON.stringify(syncRequest),
-        });
-
-        // Too big for this server's upload limit. Halve the batch and try
-        // again; once a batch is a single image there is nothing left to split,
-        // so park that image and keep the rest of the queue moving.
-        if (response.status === 413) {
-          if (pendingImages.length > 1) {
-            batchBytes = Math.max(1, Math.floor(batchBytes / 2));
-            console.warn(
-              `[sync] Server rejected the payload as too large — retrying with ` +
-                `${(batchBytes / 1024 / 1024).toFixed(1)}MB image batches`
-            );
-            continue;
-          }
-          if (pendingImages.length === 1) {
-            skippedImageIds.add(pendingImages[0].id);
-            console.error(
-              `[sync] Image ${pendingImages[0].id} is larger than the server accepts ` +
-                `(${(pendingImages[0].data.length / 1024 / 1024).toFixed(1)}MB) — skipping it; ` +
-                `everything else will still sync`
-            );
-            continue;
-          }
-          throw new Error('Server rejected the sync payload as too large');
-        }
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({} as any));
-          throw new Error(error.message || `Sync failed with status ${response.status}`);
-        }
-
-        const syncResponse: SyncResponse = await response.json();
-
-        // Apply server entries locally
-        for (const entry of syncResponse.entries) {
-          upsertFromServer(entry);
-        }
-
-        // Apply server images locally (bytes + tombstones)
-        for (const image of syncResponse.images ?? []) {
-          upsertImageFromServer(image);
-        }
-
-        // Mark sent entries as synced
-        if (pendingEntries.length > 0) {
-          markEntriesSynced(pendingEntries.map(e => e.id));
-        }
-
-        // Mark sent images as synced
-        if (pendingImages.length > 0) {
-          markImagesSynced(pendingImages.map(im => im.id));
-        }
-
-        // Update last sync timestamp
-        setConfig('last_sync_timestamp', syncResponse.serverTimestamp);
-
-        totals.sent += pendingEntries.length;
-        totals.sentImages += pendingImages.length;
-        totals.received += syncResponse.entries.length;
-        totals.receivedImages += (syncResponse.images ?? []).length;
-        totals.conflicts += syncResponse.conflicts.length;
-
-        // Anything still queued goes out in the next round, so a backlog
-        // clears in one sync rather than one batch every five minutes.
-        if (getPendingImageCount() - skippedImageIds.size <= 0) break;
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({} as any));
+        throw new Error(error.message || `Sync failed with status ${response.status}`);
       }
 
-      return totals;
+      const syncResponse: SyncResponse = await response.json();
+
+      if (syncResponse.media === undefined) {
+        // A v1 server silently drops the media field. Nothing here will work
+        // until it is upgraded, and saying so beats syncing entries in silence
+        // while every photo and video quietly stays put.
+        throw new Error(
+          'Server is running an older version that cannot sync photos or video — update the server'
+        );
+      }
+
+      for (const entry of syncResponse.entries) {
+        upsertFromServer(entry);
+      }
+
+      for (const record of syncResponse.media) {
+        upsertMediaFromServer(record);
+      }
+
+      if (pendingEntries.length > 0) {
+        markEntriesSynced(pendingEntries.map((e) => e.id));
+      }
+
+      if (pendingMedia.length > 0) {
+        markMediaSynced(pendingMedia.map((m) => m.id));
+      }
+
+      setConfig('last_sync_timestamp', syncResponse.serverTimestamp);
+
+      return {
+        sent: pendingEntries.length,
+        sentMedia: pendingMedia.length,
+        received: syncResponse.entries.length,
+        receivedMedia: syncResponse.media.length,
+        conflicts: syncResponse.conflicts.length,
+      };
     });
 
+    // ─── Phase 2: bytes ──────────────────────────────────────
+    // Deliberately outside withRetry: each transfer already resumes from where
+    // it stopped, so retrying the whole pass would only repeat that work.
+    const transfer = await transferMedia(apiFetch, (progress) => {
+      currentTransfer = progress;
+      emitStatus();
+    });
+    currentTransfer = null;
+
     console.log(
-      `[sync] Complete: sent=${result.sent}(+${result.sentImages} img), ` +
-        `received=${result.received}(+${result.receivedImages} img), conflicts=${result.conflicts}` +
-        (skippedImageIds.size > 0 ? `, ${skippedImageIds.size} image(s) too large to send` : '')
+      `[sync] Complete: sent=${result.sent} entries/${result.sentMedia} media, ` +
+        `received=${result.received} entries/${result.receivedMedia} media, ` +
+        `conflicts=${result.conflicts}, files up=${transfer.uploaded} down=${transfer.downloaded}` +
+        (transfer.deferred > 0 ? `, ${transfer.deferred} deferred` : '') +
+        (transfer.rejected.length > 0 ? `, ${transfer.rejected.length} rejected` : '')
     );
+
     isSyncing = false;
     emitStatus();
 
-    // If the server sent entries or images down, tell the renderer to reload
-    // its list and re-hydrate the open entry's images.
-    if ((result.received > 0 || result.receivedImages > 0) && journalsChangedCallback) {
+    // Tell the renderer to reload whenever anything arrived — including bytes,
+    // so a video that has just finished downloading starts playing instead of
+    // staying a placeholder.
+    const arrived = result.received > 0 || result.receivedMedia > 0 || transfer.downloaded > 0;
+    if (arrived && journalsChangedCallback) {
       journalsChangedCallback();
     }
 
-    // Everything that could sync did, but say so plainly when an image was too
-    // big for the server — it stays pending, and the count would otherwise sit
-    // there with no explanation.
-    if (skippedImageIds.size > 0) {
+    if (transfer.rejected.length > 0) {
       return {
         success: false,
-        message: `Synced: ${result.sent} sent, ${result.received} received — ` +
-          `${skippedImageIds.size} image(s) exceed the server's upload limit and could not be sent`,
+        message:
+          `Synced ${result.sent} sent, ${result.received} received — ` +
+          `${transfer.rejected.length} file(s) the server would not accept ` +
+          `(over its per-file limit)`,
       };
     }
 
     return {
       success: true,
-      message: `Synced: ${result.sent} sent, ${result.received} received`,
+      message:
+        `Synced: ${result.sent} sent, ${result.received} received` +
+        (transfer.uploaded + transfer.downloaded > 0
+          ? `, ${transfer.uploaded + transfer.downloaded} file(s) transferred`
+          : '') +
+        (transfer.deferred > 0 ? `, ${transfer.deferred} still to transfer` : ''),
     };
   } catch (err: any) {
     console.error('[sync] Failed:', err.message);
+    currentTransfer = null;
     isSyncing = false;
     emitStatus();
     return { success: false, message: err.message };

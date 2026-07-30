@@ -1,9 +1,13 @@
-import { app, BrowserWindow, globalShortcut } from 'electron';
+import { app, BrowserWindow, globalShortcut, protocol } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipcHandlers.js';
 import { startNetworkMonitor, stopNetworkMonitor } from './networkMonitor.js';
 import { closeDatabase } from './database.js';
+import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from './mediaProtocol.js';
+
+// Has to happen before the app is ready, so it sits at module scope.
+protocol.registerSchemesAsPrivileged([MEDIA_SCHEME_PRIVILEGES]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +72,9 @@ function createWindow(): void {
 // ─── App Lifecycle ───────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // Before the window exists, so the first paint can already resolve media URLs.
+  registerMediaProtocol();
+
   createWindow();
 
   // Register global shortcut: Alt+L to lock

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ElectronAPI } from '../shared/types.js';
 
 const electronAPI: ElectronAPI = {
@@ -14,10 +14,15 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('journal:changed', handler);
   },
 
-  // ─── Images ────────────────────────────────────────────────
-  imageAdd: (journalId: string, data: string) => ipcRenderer.invoke('image:add', journalId, data),
-  imageList: (journalId: string) => ipcRenderer.invoke('image:list', journalId),
-  imageDelete: (id: string) => ipcRenderer.invoke('image:delete', id),
+  // ─── Media (images + video) ────────────────────────────────
+  mediaAdd: (journalId: string, sourcePath: string) =>
+    ipcRenderer.invoke('media:add', journalId, sourcePath),
+  mediaList: (journalId: string) => ipcRenderer.invoke('media:list', journalId),
+  mediaDelete: (id: string) => ipcRenderer.invoke('media:delete', id),
+  // The renderer can't read a path off a File any more (Electron removed
+  // File.path), and shouldn't: this hands the main process the path so the bytes
+  // never travel through IPC.
+  mediaPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // ─── Sync ──────────────────────────────────────────────────
   syncTrigger: () => ipcRenderer.invoke('sync:trigger'),
