@@ -115,6 +115,10 @@ nano .env  # Set JWT_SECRET, PORT (default 3377), etc.
            # MEDIA_PATH is where photo/video bytes go (default ./data/media) —
            # point it at an external SSD if your SD card is small.
            # MAX_MEDIA_BYTES caps a single file (default 2 GB).
+           # OPENAI_API_KEY enables the AI assistant for every device.
+
+# .env is read once, at startup, from this directory — after editing it:
+sudo systemctl restart custom-journal
 
 # Install as a systemd service
 sudo cp scripts/custom-journal.service /etc/systemd/system/
@@ -124,7 +128,9 @@ sudo systemctl start custom-journal
 
 # Verify
 curl http://localhost:3377/api/health
-# → {"status":"ok","version":"1.0.0","uptime":...}
+# → {"status":"ok","version":"1.0.0","uptime":...,"ai":"configured"}
+# "ai":"not-configured" means this process has no OPENAI_API_KEY — the apps will
+# report that the assistant isn't set up on the server until you set it and restart.
 ```
 
 > **Backups:** back up both the database (`DB_PATH`) *and* the media directory (`MEDIA_PATH`). Metadata without blobs leaves every device showing placeholders that never resolve; blobs without metadata are unaddressable files named by UUID.

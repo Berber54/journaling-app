@@ -2,11 +2,27 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+// Read the .env that sits next to the install, not one relative to whatever
+// directory the process happened to start in. A service launched without a
+// WorkingDirectory (systemd, pm2, a shell in $HOME) otherwise silently gets no
+// .env at all — and because dbPath/mediaPath below are resolved against
+// PROJECT_ROOT, the database and media keep working, so the *only* visible
+// symptom is that .env-only settings like OPENAI_API_KEY come up empty.
+const ENV_PATH = path.resolve(PROJECT_ROOT, '.env');
+const rootEnv = dotenv.config({ path: ENV_PATH });
+// Still honour a .env in the working directory, but only for keys the install's
+// own .env didn't define (dotenv never overwrites an already-set variable).
+dotenv.config();
+
+// Where the config came from, so startup can say so out loud. Chasing a missing
+// key is much easier when the log names the file the server actually read.
+export const envFileStatus = rootEnv.error
+  ? `no .env found at ${ENV_PATH}`
+  : `loaded ${ENV_PATH}`;
 
 export const config = {
   port: parseInt(process.env.PORT || '3377', 10),
@@ -27,8 +43,11 @@ export const config = {
   // The OpenAI API key now lives on the server (never on the clients). The
   // desktop apps call POST /api/llm/chat and the server proxies to OpenAI, so
   // the key is stored in exactly one place. Empty string = AI disabled.
-  openaiApiKey: process.env.OPENAI_API_KEY || '',
-  openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  // Trimmed because a key pasted into .env with a trailing space or newline is
+  // still a key — untrimmed it reaches OpenAI as a malformed header and comes
+  // back as a confusing 401. A whitespace-only value counts as unset.
+  openaiApiKey: (process.env.OPENAI_API_KEY || '').trim(),
+  openaiBaseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim(),
 } as const;
 
 // Models the LLM proxy is allowed to forward (guards against clients asking the

@@ -1,4 +1,5 @@
 import { type Request, type Response, Router } from 'express';
+import { config } from '../config.js';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,5 +22,9 @@ healthRouter.get('/', (_req: Request, res: Response) => {
     status: 'ok',
     version,
     uptime: Math.floor(process.uptime()),
+    // Whether this process has an OPENAI_API_KEY — a boolean, never the key.
+    // `curl <server>/api/health` is then enough to confirm the AI proxy is live
+    // without spending a token or reading the service log.
+    ai: config.openaiApiKey ? 'configured' : 'not-configured',
   });
 });

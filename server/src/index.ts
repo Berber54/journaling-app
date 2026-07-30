@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { config } from './config.js';
+import { config, envFileStatus } from './config.js';
 import db from './database.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -50,6 +50,19 @@ const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`[server] Environment: ${config.nodeEnv}`);
   console.log(`[server] Database: ${config.dbPath}`);
   console.log(`[server] Media blobs: ${config.mediaPath} (max ${config.maxMediaBytes} bytes per file)`);
+  console.log(`[server] Config: ${envFileStatus}`);
+  // Say this at startup rather than leaving it to be discovered by a client
+  // getting a 503 mid-conversation: a key in the wrong file, or a service that
+  // never reloaded after the key was added, looks identical from the app.
+  if (config.openaiApiKey) {
+    console.log(`[server] AI assistant: enabled (proxying to ${config.openaiBaseUrl})`);
+  } else {
+    console.warn(
+      '[server] AI assistant: DISABLED — OPENAI_API_KEY is not set in this process. ' +
+        'POST /api/llm/chat will return 503 and the desktop apps will report that the ' +
+        'assistant is not configured on the server. Set it in the .env named above and restart.'
+    );
+  }
 });
 
 function shutdown(signal: string): void {
