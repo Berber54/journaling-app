@@ -1,5 +1,5 @@
 import React from 'react';
-import type { FigureState, ImageAlign, ImageLayout, MediaKind } from '../lib/docImages';
+import type { FigureKind, FigureState, ImageAlign, ImageLayout } from '../lib/docImages';
 import { allowedAligns, isFloating } from '../lib/docImages';
 
 export interface OverlayRect {
@@ -12,7 +12,8 @@ export interface OverlayRect {
 interface ImageOverlayProps {
   rect: OverlayRect;
   state: FigureState;
-  kind?: MediaKind;
+  /** Video keeps its bottom strip clear so the player controls stay usable. */
+  kind: FigureKind;
   onDragStart: (e: React.PointerEvent) => void;
   onResizeStart: (corner: Corner, e: React.PointerEvent) => void;
   onLayoutChange: (layout: ImageLayout) => void;
@@ -41,7 +42,7 @@ const ALIGN_LABEL: Record<ImageAlign, string> = {
 export default function ImageOverlay({
   rect,
   state,
-  kind = 'image',
+  kind,
   onDragStart,
   onResizeStart,
   onLayoutChange,
@@ -51,22 +52,19 @@ export default function ImageOverlay({
   const aligns = allowedAligns(state.layout);
   // Keep the bubble on screen: below the image when it's near the top.
   const toolbarBelow = rect.top < 52;
-  const noun = kind === 'video' ? 'video' : 'image';
 
   return (
     <div
-      className="doc-image-overlay"
+      className={`doc-image-overlay ${kind === 'video' ? 'doc-image-overlay-video' : ''}`}
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
     >
-      {/* For a video the grab surface is a slim top strip, leaving the native
-          playback controls at the bottom clickable. Images grab the whole box. */}
       <div
-        className={kind === 'video' ? 'doc-image-grab doc-image-grab-video' : 'doc-image-grab'}
+        className="doc-image-grab"
         onPointerDown={onDragStart}
         title={
           isFloating(state.layout)
-            ? `Drag to move the ${noun} anywhere`
-            : `Drag to move the ${noun} through the text`
+            ? `Drag to move the ${kind} anywhere`
+            : `Drag to move the ${kind} through the text`
         }
       />
 
@@ -84,7 +82,7 @@ export default function ImageOverlay({
       <div
         className={`doc-image-bubble ${toolbarBelow ? 'below' : ''}`}
         role="toolbar"
-        aria-label={`${noun === 'video' ? 'Video' : 'Image'} options`}
+        aria-label="Image options"
         onPointerDown={(e) => e.stopPropagation()}
       >
         {LAYOUT_OPTIONS.map((opt) => (
@@ -131,8 +129,8 @@ export default function ImageOverlay({
           className="doc-image-btn doc-image-btn-danger"
           onMouseDown={(e) => e.preventDefault()}
           onClick={onDelete}
-          aria-label={`Remove ${noun}`}
-          title={`Remove ${noun}`}
+          aria-label="Remove image"
+          title="Remove image"
         >
           <IconTrash />
         </button>

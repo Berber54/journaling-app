@@ -7,6 +7,8 @@ export function useSync() {
     lastSync: null,
     pendingCount: 0,
     syncing: false,
+    pendingMediaCount: 0,
+    transfer: null,
   });
 
   useEffect(() => {

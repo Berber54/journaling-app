@@ -14,6 +14,13 @@ export const config = {
   dbPath: path.resolve(PROJECT_ROOT, process.env.DB_PATH || './data/journals.db'),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: process.env.LOG_LEVEL || 'info',
+  // ─── Media blobs ───────────────────────────────────────────
+  // Photo and video bytes are stored as files, not in SQLite: a video is far
+  // too big to hold in a database row (or in a JSON sync payload). Point this
+  // at an external disk if the Pi's SD card is small.
+  mediaPath: path.resolve(PROJECT_ROOT, process.env.MEDIA_PATH || './data/media'),
+  // Largest single file the server will accept, in bytes. Default 2 GB.
+  maxMediaBytes: parseInt(process.env.MAX_MEDIA_BYTES || String(2 * 1024 * 1024 * 1024), 10),
   jwtExpiresIn: '24h',
   bcryptRounds: 12,
   // ─── AI assistant ──────────────────────────────────────────

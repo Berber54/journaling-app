@@ -8,14 +8,15 @@ A private, offline-first journaling app that syncs across all your devices via a
 
 ## ✨ Features
 
-- **Cross-Platform** — Native apps for Windows, macOS, and Linux (iPhone planned)
+- **Cross-Platform** — Native apps for Windows and macOS (Linux and iPhone planned)
 - **Offline-First** — Write anytime, anywhere. Entries sync when you're back online
 - **Self-Hosted Sync** — Your Raspberry Pi is the server. Your data never leaves your network
 - **Instant Lock** — Hotkey lock (Alt+L / Cmd+L), auto-lock on focus loss and minimize
 - **Passphrase Protection** — Any-character passphrase (min 6 chars), bcrypt-hashed. No content visible when locked
 - **Windows Hello** — Optional fingerprint / face / device-PIN unlock (Windows)
 - **Rich-Text Editor** — Bold, italic, underline, and text colors
-- **Placed Images** — Insert from the toolbar, then drag the image where you want it and pick how the text behaves around it: in line, wrapped, break text, behind or in front — just like Google Docs
+- **Placed Photos & Video** — Insert from the toolbar, then drag the file where you want it and pick how the text behaves around it: in line, wrapped, break text, behind or in front — just like Google Docs. Video plays in place
+- **Media Sync That Handles Real Files** — Photos and videos sync to every device over resumable transfers. A 900 MB clip that loses wifi at 95% picks up where it stopped instead of starting over
 - **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (API key lives on your server, shared by every device)
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
@@ -27,7 +28,7 @@ A private, offline-first journaling app that syncs across all your devices via a
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│  Windows App │   │   Mac App    │   │  Linux App   │
+│  Windows App │   │   Mac App    │   │ Linux (plan) │
 │  (Electron)  │   │  (Electron)  │   │  (Electron)  │
 └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
        │                  │                  │
@@ -78,7 +79,7 @@ custom_journal/
 │   ├── src/main/            # Main process (Cmd+L, dock, hiddenInset)
 │   ├── src/renderer/        # React UI (+ titlebar drag regions)
 │   └── entitlements.*.plist # macOS code signing
-├── linux-app/               ← Linux Electron app
+├── linux-app/               ← Planned (design notes only, no source yet)
 │   ├── src/main/            # Main process (Alt+L, system tray)
 │   ├── src/renderer/        # React UI (identical to Windows)
 │   └── custom-journal.desktop # Freedesktop entry
@@ -111,6 +112,9 @@ npm run build
 # Configure environment
 cp .env.example .env
 nano .env  # Set JWT_SECRET, PORT (default 3377), etc.
+           # MEDIA_PATH is where photo/video bytes go (default ./data/media) —
+           # point it at an external SSD if your SD card is small.
+           # MAX_MEDIA_BYTES caps a single file (default 2 GB).
 
 # Install as a systemd service
 sudo cp scripts/custom-journal.service /etc/systemd/system/
@@ -123,12 +127,14 @@ curl http://localhost:3377/api/health
 # → {"status":"ok","version":"1.0.0","uptime":...}
 ```
 
+> **Backups:** back up both the database (`DB_PATH`) *and* the media directory (`MEDIA_PATH`). Metadata without blobs leaves every device showing placeholders that never resolve; blobs without metadata are unaddressable files named by UUID.
+
 ### 2. Build a Desktop App
 
 Each platform app follows the same pattern:
 
 ```bash
-cd windows-app   # or mac-app, linux-app
+cd windows-app   # or mac-app
 
 npm install
 npx @electron/rebuild   # Rebuild native modules for Electron
@@ -176,7 +182,16 @@ npm run package          # Creates installer in dist-electron/
   4. Manual "Sync Now" button
   5. Right after login or account registration
 
-When offline, all changes are saved locally with `synced=0`. When the network returns, pending entries **and image bytes** are automatically pushed to the server. If a conflict exists (same entry edited on two devices), the version with the later `updated_at` wins. Images ride the same `POST /api/sync` round trip (each carries its own `updated_at`/`deleted` for last-write-wins), so a photo added on one device appears on the others after the next sync.
+When offline, all changes are saved locally with `synced=0`. When the network returns they are pushed automatically. If a conflict exists (same entry edited on two devices), the version with the later `updated_at` wins.
+
+**Photos and video sync in two phases** (protocol v2):
+
+1. **Metadata** — entries and a short description of each file (id, kind, size, checksum) go up and down in one small `POST /api/sync`. This payload never contains file bytes, so it stays around a kilobyte no matter how much media you have.
+2. **Bytes** — each file transfers over `/api/media` in 8 MB chunks, streamed straight to disk on both ends and **resumable**: every transfer asks where it got to and continues from there. Nothing is ever held whole in memory, which is what makes video possible on a Raspberry Pi.
+
+A file arrives on another device as a correctly-sized "Downloading…" placeholder in exactly the right spot, and fills in — playable, if it's a video — the moment its bytes land. No reopening the entry.
+
+> **Upgrading from an earlier build?** Your existing photos are migrated automatically on both the server and each device, keeping their ids so entries keep pointing at them. Update the server first: a new app talking to an old server refuses to sync rather than quietly leaving your media behind.
 
 ---
 
@@ -194,7 +209,7 @@ When offline, all changes are saved locally with `synced=0`. When the network re
 - Stays in dock when window closed (standard macOS behavior)
 - Dock badge shows unsynced entry count
 
-### Linux
+### Linux *(planned — the design below is not built yet)*
 - Standard window frame, Alt+L lock hotkey
 - System tray icon with Show/Hide, Sync Now, Quit menu
 - Close minimizes to tray (app keeps running)
@@ -219,7 +234,10 @@ When offline, all changes are saved locally with `synced=0`. When the network re
 | POST | `/journals` | Yes | Create entry (client-generated UUID) |
 | PUT | `/journals/:id` | Yes | Update entry |
 | DELETE | `/journals/:id` | Yes | Soft-delete entry |
-| POST | `/sync` | Yes | Bidirectional sync (entries **and** image bytes) |
+| POST | `/sync` | Yes | Bidirectional sync — entries + media **metadata** (no bytes) |
+| GET | `/media/:id/status` | Yes | How much of a file the server holds (the resume cursor) |
+| PUT | `/media/:id?offset=N` | Yes | Upload raw bytes from byte N — resumable, streamed to disk |
+| GET | `/media/:id` | Yes | Download a file, whole or by `Range` (what video seeking uses) |
 | POST | `/llm/chat` | Yes | AI assistant — server proxies `{ model, messages }` to OpenAI using the server's key |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, and §8 for the sync protocol.
@@ -232,10 +250,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, an
 - [x] Server implementation (API, auth, sync engine)
 - [x] Windows desktop app
 - [x] macOS desktop app
-- [x] Linux desktop app
+- [ ] Linux desktop app (design notes written, no source yet)
 - [x] Rich-text editor with formatting toolbar (bold/italic/underline/color)
 - [x] Image attachments — synced to the server and mirrored to every device
 - [x] Google-Docs-style image placement — drag to position, corner-resize, five text-wrapping modes
+- [x] Video attachments — placed and played inline, synced like photos
+- [x] Resumable media transfers — interrupted uploads and downloads continue instead of restarting
 - [x] AI assistant over your entries (OpenAI, key held on the server)
 - [x] Windows Hello biometric unlock
 - [ ] iPhone app (React Native or native Swift)

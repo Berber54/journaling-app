@@ -188,17 +188,17 @@
   width: 32px;
 }
 
+.editor-toolbar-hint.editor-toolbar-error {
+  color: var(--danger);
+  white-space: normal;
+}
+
 .editor-toolbar-hint {
   margin-left: 10px;
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-display);
   white-space: nowrap;
-}
-
-.editor-toolbar-hint.editor-toolbar-error {
-  color: var(--danger);
-  white-space: normal;
 }
 
 /* ─── Writing surface ───────────────────────────────────────── */
@@ -258,14 +258,24 @@ figure.doc-image video {
   -webkit-user-drag: none;
 }
 
-/* A video needs a working cursor over its native controls, not a grab hand;
-   it's repositioned via the selection overlay's grab strip instead. */
-figure.doc-image[data-media-kind='video'] {
-  cursor: default;
-}
-
 figure.doc-image video {
   background: #000;
+  border-radius: 6px;
+}
+
+/* An unselected video ignores the pointer, so a click lands on the figure and
+   selects (or drags) it. Once selected, its controls take clicks again — the
+   overlay's grab layer leaves the bottom strip clear for exactly this. */
+figure.doc-image[data-kind='video'] video {
+  pointer-events: none;
+}
+
+figure.doc-image[data-kind='video'].doc-image-selected video {
+  pointer-events: auto;
+}
+
+.doc-image-overlay-video .doc-image-grab {
+  bottom: 46px;
 }
 
 figure.doc-image.doc-image-dragging {
@@ -273,16 +283,29 @@ figure.doc-image.doc-image-dragging {
   cursor: grabbing;
 }
 
-/* Missing bytes: media syncs separately from the entry HTML (ARCHITECTURE §8),
-   so a figure can exist briefly before its bytes arrive on this device. */
-figure.doc-image-missing {
+/* Bytes not here: either still transferring (pending) or gone (missing). */
+figure.doc-image-missing,
+figure.doc-image-pending {
   min-height: 96px;
   border: 1px dashed var(--border-strong);
   background: var(--bg-tertiary);
 }
 
+figure.doc-image-pending::after {
+  content: 'Downloading…';
+  display: block;
+  padding: 38px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
+figure.doc-image-pending[data-kind='video']::after {
+  content: 'Downloading video…';
+}
+
 figure.doc-image-missing::after {
-  content: 'Image not available on this device';
+  content: 'File not available on this device';
   display: block;
   padding: 38px 12px;
   text-align: center;
@@ -290,10 +313,6 @@ figure.doc-image-missing::after {
   font-family: var(--font-display);
   font-size: 12px;
   line-height: 1.4;
-}
-
-figure.doc-image-missing[data-media-kind='video']::after {
-  content: 'Video not available on this device';
 }
 
 /* In line with text — behaves like one very large character. */
@@ -370,13 +389,6 @@ figure.doc-image[data-layout='front'] {
 
 .doc-image-grab:active {
   cursor: grabbing;
-}
-
-/* Video: only the top strip grabs, so the native controls at the bottom of the
-   frame stay clickable while the video is selected. */
-.doc-image-grab-video {
-  inset: 0 0 auto 0;
-  height: 34px;
 }
 
 .doc-image-handle {

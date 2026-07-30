@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import type { JournalEntry } from '../../shared/types';
+import type { JournalEntry, JournalMedia } from '../../shared/types';
 import DateTimePicker from './DateTimePicker';
 import ImageOverlay, { type Corner, type OverlayRect } from './ImageOverlay';
 import {
+  type FigureKind,
   type FigureState,
   type ImageAlign,
   type ImageLayout,
-  type MediaKind,
+  type MediaSource,
   DEFAULT_LAYOUT,
   MAX_WIDTH,
   MIN_WIDTH,
@@ -14,15 +15,19 @@ import {
   createFigure,
   figureKind,
   findFigure,
-  hydrateImages,
+  hydrateMedia,
   isFloating,
-  mediaKindFromDataUrl,
   readFigure,
   referencedImageIds,
   serializeContent,
   writeFigure,
 } from '../lib/docImages';
 import '../styles/editor.css';
+
+/** IPC payload → what hydrateMedia needs, keyed by id. */
+function toMediaMap(files: JournalMedia[]): Map<string, MediaSource> {
+  return new Map(files.map((f) => [f.id, { url: f.url, kind: f.kind, available: f.available }]));
+}
 
 interface JournalEditorProps {
   entry: JournalEntry;
@@ -42,11 +47,6 @@ const toHtml = (s: string) =>
 const COLORS = ['#dbe3f4', '#3f6fd6', '#35b57e', '#d6a24a', '#e0596a', '#b98cff'];
 
 const DRAG_THRESHOLD = 4; // px before a click on an image turns into a drag
-
-// Videos ride the same base64 sync payload as images (ARCHITECTURE §8), so a
-// single huge file would bloat every sync. Cap uploads well under the server's
-// JSON body limit; base64 inflates bytes by ~33%.
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
 
 interface DragState {
   imageId: string;
@@ -85,9 +85,11 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false });
 
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<{ rect: OverlayRect; state: FigureState; kind: MediaKind } | null>(null);
+  const [overlay, setOverlay] = useState<{ rect: OverlayRect; state: FigureState } | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [imageCount, setImageCount] = useState(0);
+  // Surfaced next to the toolbar when a file can't be added — quieter than a
+  // dialog, and the user is looking there anyway having just clicked the button.
   const [mediaError, setMediaError] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,9 +99,11 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const contentRef = useRef<HTMLDivElement | null>(null);
   const colorInputRef = useRef<HTMLInputElement | null>(null);
 
-  // id → data: URL for every image belonging to this entry. The document HTML
-  // only stores placeholders; the bytes are looked up from here (see docImages).
-  const imagesRef = useRef<Map<string, string>>(new Map());
+  // id → where to read each of this entry's files. The document HTML only
+  // stores placeholders; the URL and kind are looked up from here (see
+  // docImages). Bytes themselves never come through here — a journal-media://
+  // URL lets Chromium stream them, which is what makes video viable.
+  const mediaRef = useRef<Map<string, MediaSource>>(new Map());
   // The last values we handed to the store, so an entry object echoing back
   // from a save doesn't reset the caret (or a drag) mid-edit.
   const savedRef = useRef({ title: entry.title, content: entry.content, journal_date: entry.journal_date });
@@ -135,7 +139,6 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     setOverlay({
       rect: { left: f.left - s.left, top: f.top - s.top, width: f.width, height: f.height },
       state: readFigure(fig),
-      kind: figureKind(fig),
     });
   }, [selectedImageId]);
 
@@ -152,6 +155,17 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       observer.disconnect();
     };
   }, [selectedImageId, refreshOverlay]);
+
+  // Mark the selected figure so CSS can hand pointer events to a video's own
+  // controls. Unselected video ignores clicks, so the first click selects and
+  // drags the figure like any image rather than hitting the scrubber.
+  useLayoutEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    for (const fig of allFigures(root)) {
+      fig.classList.toggle('doc-image-selected', fig.dataset.imageId === selectedImageId);
+    }
+  }, [selectedImageId, entry.id, entry.content]);
 
   // ─── Auto-save (1s debounce) ───────────────────────────────────
   const triggerSave = useCallback((newTitle: string, newContent: string, newDate: string) => {
@@ -172,13 +186,13 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
         setSaveStatus('offline');
       }
 
-      // Drop image rows the document no longer references (deleted figures).
+      // Drop files the document no longer references (deleted figures).
       const stillUsed = referencedImageIds(newContent);
-      for (const id of Array.from(imagesRef.current.keys())) {
+      for (const id of Array.from(mediaRef.current.keys())) {
         if (stillUsed.has(id)) continue;
-        imagesRef.current.delete(id);
+        mediaRef.current.delete(id);
         try {
-          await window.electronAPI.imageDelete(id);
+          await window.electronAPI.mediaDelete(id);
         } catch {
           /* best-effort cleanup — the row is harmless if it lingers */
         }
@@ -211,24 +225,24 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       setMediaError(null);
 
       let active = true;
-      window.electronAPI.imageList(entry.id).then((imgs) => {
+      window.electronAPI.mediaList(entry.id).then((files) => {
         const root = contentRef.current;
         if (!active || !root) return;
-        imagesRef.current = new Map(imgs.map((im) => [im.id, im.data]));
+        mediaRef.current = toMediaMap(files);
 
         root.innerHTML = toHtml(entry.content);
 
-        // Entries written before images were placeable kept them in a gallery
+        // Entries written before media were placeable kept them in a gallery
         // below the text. Re-attach any that the document doesn't reference yet
         // so nothing is lost, then persist the migration.
         const referenced = referencedImageIds(root);
-        const strays = imgs.filter((im) => !referenced.has(im.id));
-        for (const im of strays) {
-          root.appendChild(createFigure(im.id, { layout: DEFAULT_LAYOUT }, mediaKindFromDataUrl(im.data)));
+        const strays = files.filter((file) => !referenced.has(file.id));
+        for (const file of strays) {
+          root.appendChild(createFigure(file.id, file.kind, { layout: DEFAULT_LAYOUT }));
           root.appendChild(document.createElement('br'));
         }
 
-        hydrateImages(root, imagesRef.current);
+        hydrateMedia(root, mediaRef.current);
         syncImageCount();
         if (strays.length > 0) {
           triggerSave(entry.title, serializeContent(root), entry.journal_date);
@@ -250,23 +264,21 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     if (entry.content !== savedRef.current.content && contentRef.current) {
       savedRef.current.content = entry.content;
       contentRef.current.innerHTML = toHtml(entry.content);
-      hydrateImages(contentRef.current, imagesRef.current);
+      hydrateMedia(contentRef.current, mediaRef.current);
       syncImageCount();
       setSelectedImageId(null);
     }
   }, [entry.id, entry.title, entry.content, entry.journal_date, triggerSave, syncImageCount]);
 
-  // When a sync pulls image bytes (or tombstones) down, re-fetch this entry's
-  // images and re-hydrate. This covers the case where the entry's HTML already
-  // referenced an image placed on another device but the bytes only just
-  // arrived — the "image not available" figure fills in without reopening.
+  // When a sync brings files down (or tombstones them), re-read this entry's
+  // media and re-hydrate. This is what turns a "still downloading" placeholder
+  // into the finished photo or a playable video without reopening the entry.
   useEffect(() => {
     const unsubscribe = window.electronAPI.onJournalsChanged(async () => {
       const root = contentRef.current;
       if (!root) return;
-      const imgs = await window.electronAPI.imageList(entry.id);
-      imagesRef.current = new Map(imgs.map((im) => [im.id, im.data]));
-      hydrateImages(root, imagesRef.current);
+      mediaRef.current = toMediaMap(await window.electronAPI.mediaList(entry.id));
+      hydrateMedia(root, mediaRef.current);
       syncImageCount();
     });
     return unsubscribe;
@@ -302,7 +314,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     if (root.contains(range.startContainer)) savedRangeRef.current = range.cloneRange();
   }, []);
 
-  // ─── Media upload (images & videos) ────────────────────────────
+  // ─── Image upload ──────────────────────────────────────────────
   const handlePickImages = () => {
     rememberSelection();
     fileInputRef.current?.click();
@@ -313,10 +325,10 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     videoInputRef.current?.click();
   };
 
-  const insertFigure = (imageId: string, kind: MediaKind = 'image') => {
+  const insertFigure = (imageId: string, kind: FigureKind) => {
     const root = contentRef.current;
     if (!root) return;
-    const fig = createFigure(imageId, undefined, kind);
+    const fig = createFigure(imageId, kind);
     const range = savedRangeRef.current;
 
     if (range && root.contains(range.startContainer)) {
@@ -334,33 +346,33 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     after.collapse(true);
     savedRangeRef.current = after.cloneRange();
 
-    hydrateImages(root, imagesRef.current);
+    hydrateMedia(root, mediaRef.current);
     syncImageCount();
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = ''; // allow re-selecting the same file
-    setMediaError(null);
 
+    setMediaError(null);
     let lastId: string | null = null;
     for (const file of files) {
-      if (file.type.startsWith('video/') && file.size > MAX_VIDEO_BYTES) {
-        setMediaError(`"${file.name}" is larger than 100 MB — trim or compress it before adding.`);
+      // Hand over the path and let the main process copy the file. Reading a
+      // video into the renderer to base64 it — what v1 did with images — would
+      // mean holding the whole thing in memory twice over.
+      const sourcePath = window.electronAPI.mediaPathForFile(file);
+      if (!sourcePath) {
+        setMediaError(`"${file.name}" could not be read from disk — try copying it locally first.`);
         continue;
       }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      // The bytes are just a data: URL; its MIME type decides image vs video.
-      const kind = mediaKindFromDataUrl(dataUrl);
-      const saved = await window.electronAPI.imageAdd(entry.id, dataUrl);
-      imagesRef.current.set(saved.id, saved.data ?? dataUrl);
-      insertFigure(saved.id, kind);
-      lastId = saved.id;
+      try {
+        const saved = await window.electronAPI.mediaAdd(entry.id, sourcePath);
+        mediaRef.current.set(saved.id, { url: saved.url, kind: saved.kind, available: saved.available });
+        insertFigure(saved.id, saved.kind);
+        lastId = saved.id;
+      } catch (err: any) {
+        setMediaError(`"${file.name}" could not be added: ${err?.message ?? 'unknown error'}`);
+      }
     }
 
     if (lastId) {
@@ -526,13 +538,6 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     const fig = figureFromEvent(e.target);
     if (!fig || !fig.dataset.imageId) {
       if (selectedImageId) setSelectedImageId(null);
-      return;
-    }
-    // A video needs its native controls (play/scrub) to receive the click, so
-    // don't preventDefault or start a body-drag: just select it. Moving and
-    // resizing a video happen through the overlay's grab strip and handles.
-    if (figureKind(fig) === 'video') {
-      setSelectedImageId(fig.dataset.imageId);
       return;
     }
     e.preventDefault(); // don't drop a caret inside the figure
@@ -808,7 +813,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
           <ImageOverlay
             rect={overlay.rect}
             state={overlay.state}
-            kind={overlay.kind}
+            kind={mediaRef.current.get(selectedImageId)?.kind ?? 'image'}
             onDragStart={(e) => {
               e.preventDefault();
               beginDrag(selectedImageId, e.clientX, e.clientY);
