@@ -119,7 +119,10 @@ export function applyFigureStyle(fig: HTMLElement): void {
 export type FigureKind = 'image' | 'video';
 
 export function figureKind(fig: HTMLElement): FigureKind {
-  return fig.dataset.kind === 'video' ? 'video' : 'image';
+  // `data-media-kind` is what the earlier base64 video build wrote. Read it as
+  // well, so an entry created by that build still renders as a video rather
+  // than a broken image; `hydrateMedia` then rewrites it to `data-kind`.
+  return fig.dataset.kind === 'video' || fig.dataset.mediaKind === 'video' ? 'video' : 'image';
 }
 
 export function createFigure(
@@ -204,6 +207,9 @@ export function hydrateMedia(root: HTMLElement, byId: Map<string, MediaSource>):
     }
     if (kind === 'video') fig.dataset.kind = 'video';
     else delete fig.dataset.kind;
+    // Converge on the canonical attribute, so entries written by the earlier
+    // video build stop carrying both.
+    delete fig.dataset.mediaKind;
 
     if (source?.available) {
       element.setAttribute('src', source.url);

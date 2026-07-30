@@ -88,9 +88,13 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
   const [overlay, setOverlay] = useState<{ rect: OverlayRect; state: FigureState } | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [imageCount, setImageCount] = useState(0);
+  // Surfaced next to the toolbar when a file can't be added — quieter than a
+  // dialog, and the user is looking there anyway having just clicked the button.
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const colorInputRef = useRef<HTMLInputElement | null>(null);
@@ -218,6 +222,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       setJournalDate(entry.journal_date);
       setSaveStatus('saved');
       setSelectedImageId(null);
+      setMediaError(null);
 
       let active = true;
       window.electronAPI.mediaList(entry.id).then((files) => {
@@ -315,6 +320,11 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     fileInputRef.current?.click();
   };
 
+  const handlePickVideos = () => {
+    rememberSelection();
+    videoInputRef.current?.click();
+  };
+
   const insertFigure = (imageId: string, kind: FigureKind) => {
     const root = contentRef.current;
     if (!root) return;
@@ -344,6 +354,7 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
     const files = Array.from(e.target.files || []);
     e.target.value = ''; // allow re-selecting the same file
 
+    setMediaError(null);
     let lastId: string | null = null;
     for (const file of files) {
       // Hand over the path and let the main process copy the file. Reading a
@@ -351,13 +362,17 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       // mean holding the whole thing in memory twice over.
       const sourcePath = window.electronAPI.mediaPathForFile(file);
       if (!sourcePath) {
-        console.error(`[editor] No filesystem path for ${file.name} — skipped`);
+        setMediaError(`"${file.name}" could not be read from disk — try copying it locally first.`);
         continue;
       }
-      const saved = await window.electronAPI.mediaAdd(entry.id, sourcePath);
-      mediaRef.current.set(saved.id, { url: saved.url, kind: saved.kind, available: saved.available });
-      insertFigure(saved.id, saved.kind);
-      lastId = saved.id;
+      try {
+        const saved = await window.electronAPI.mediaAdd(entry.id, sourcePath);
+        mediaRef.current.set(saved.id, { url: saved.url, kind: saved.kind, available: saved.available });
+        insertFigure(saved.id, saved.kind);
+        lastId = saved.id;
+      } catch (err: any) {
+        setMediaError(`"${file.name}" could not be added: ${err?.message ?? 'unknown error'}`);
+      }
     }
 
     if (lastId) {
@@ -744,9 +759,25 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
             <path d="M2.2 12.1l3.5-3.6 2.6 2.6 2.5-2.1 3 3.1" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
           </svg>
         </button>
-        {imageCount > 0 && (
-          <span className="editor-toolbar-hint">Click an image to move, resize or wrap text</span>
-        )}
+        <button
+          type="button"
+          className="editor-tool editor-tool-video"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handlePickVideos}
+          aria-label="Insert video"
+          title="Insert video — then drag it where you want it"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <rect x="1.2" y="3.4" width="9.4" height="9.2" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M11 6.6l3.8-2.1v7l-3.8-2.1z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M4.4 6.2l3.4 1.8-3.4 1.8z" fill="currentColor" />
+          </svg>
+        </button>
+        {mediaError ? (
+          <span className="editor-toolbar-hint editor-toolbar-error">{mediaError}</span>
+        ) : imageCount > 0 ? (
+          <span className="editor-toolbar-hint">Click a photo or video to move, resize or wrap text</span>
+        ) : null}
       </div>
 
       <div className="editor-surface" ref={surfaceRef}>
@@ -802,7 +833,16 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFilesSelected}
+      />
+
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}

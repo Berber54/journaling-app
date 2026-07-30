@@ -183,8 +183,14 @@
   pointer-events: none;
 }
 
-.editor-tool-image {
+.editor-tool-image,
+.editor-tool-video {
   width: 32px;
+}
+
+.editor-toolbar-hint.editor-toolbar-error {
+  color: var(--danger);
+  white-space: normal;
 }
 
 .editor-toolbar-hint {
