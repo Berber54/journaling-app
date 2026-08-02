@@ -33,7 +33,7 @@ interface JournalEditorProps {
   entry: JournalEntry;
   onSave: (id: string, updates: Partial<JournalEntry>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onAskAi: () => void;
+  onExport: () => void;
 }
 
 // Older entries were stored as plain text (no HTML). Detect that so we can
@@ -76,7 +76,7 @@ interface DropIndicator {
   height: number;
 }
 
-export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: JournalEditorProps) {
+export default function JournalEditor({ entry, onSave, onDelete, onExport }: JournalEditorProps) {
   const [title, setTitle] = useState(entry.title);
   const [journalDate, setJournalDate] = useState(entry.journal_date);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'offline'>('saved');
@@ -670,8 +670,8 @@ export default function JournalEditor({ entry, onSave, onDelete, onAskAi }: Jour
           {saveStatus === 'saving' && 'Saving…'}
           {saveStatus === 'offline' && 'Offline — saved locally'}
         </span>
-        <button className="editor-ai-btn" onClick={onAskAi} title="Ask the AI about this entry">
-          ✦ Ask AI about this entry
+        <button className="editor-export-btn" onClick={onExport} title="Export this entry to a file">
+          ⤓ Export this entry
         </button>
       </div>
 

@@ -133,7 +133,7 @@
   justify-content: space-between;
 }
 
-.sidebar-ai-btn {
+.sidebar-export-btn {
   width: 100%;
   padding: 10px 14px;
   background: var(--bg-tertiary);
@@ -148,7 +148,7 @@
   transition: background var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
 }
 
-.sidebar-ai-btn:hover {
+.sidebar-export-btn:hover {
   background: var(--accent-primary);
   color: #fff;
   box-shadow: 0 0 18px -4px var(--accent-glow);

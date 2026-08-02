@@ -16,8 +16,8 @@ import {
 import { importFile } from './mediaStore.js';
 import { sync, login, register, getSyncStatus, onStatusChange, onJournalsChanged } from './syncService.js';
 import { checkBiometricAvailability, verifyBiometric } from './biometric.js';
-import { chatWithLLM } from './llmService.js';
-import type { ChatMessage } from '../shared/types.js';
+import { exportJournals, revealExport } from './exportService.js';
+import type { ExportOptions } from '../shared/types.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -169,10 +169,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return verifyBiometric(reason);
   });
 
-  // ─── LLM Handlers (OpenAI) ─────────────────────────────────
+  // ─── Export Handlers ───────────────────────────────────────
 
-  ipcMain.handle('llm:chat', async (_event, params: { model: string; messages: ChatMessage[] }) => {
-    return chatWithLLM(params.model, params.messages);
+  // Writing files needs a save/folder dialog, which belongs to the window, and
+  // reads the local database directly — so it all lives in the main process.
+  ipcMain.handle('export:run', async (_event, options: ExportOptions) => {
+    return exportJournals(mainWindow, options);
+  });
+
+  ipcMain.handle('export:reveal', (_event, target: string) => {
+    revealExport(target);
   });
 
   // ─── Settings Handlers ─────────────────────────────────────

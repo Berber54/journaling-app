@@ -160,7 +160,7 @@ Terminal=false
 
 ## Step 5: Shared Types & Preload
 
-Create **`src/shared/types.ts`** and **`src/preload/index.cts`** — identical to Windows. Copy from `../windows-app/src/shared/types.ts` and `../windows-app/src/preload/index.cts`. `types.ts` includes the `ChatMessage` type, and the preload exposes every IPC channel including `biometricAvailable` / `biometricVerify` and `llmChat` (AI Assistant).
+Create **`src/shared/types.ts`** and **`src/preload/index.cts`** — identical to Windows. Copy from `../windows-app/src/shared/types.ts` and `../windows-app/src/preload/index.cts`. `types.ts` includes the `ExportOptions` / `ExportResult` types, and the preload exposes every IPC channel including `biometricAvailable` / `biometricVerify` and `exportRun` / `exportReveal` (journal export).
 
 ---
 

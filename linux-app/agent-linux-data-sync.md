@@ -12,7 +12,7 @@
 2. `src/main/syncService.ts` — sync engine (identical to Windows)
 3. `src/main/networkMonitor.ts` — network monitoring (identical to Windows)
 4. `src/main/ipcHandlers.ts` — IPC handlers (identical to Windows + Linux tray sync)
-5. `src/main/llmService.ts` — AI Assistant / OpenAI client (identical to Windows)
+5. `src/main/exportService.ts` + `src/main/entryText.ts` — journal export (identical to Windows)
 6. `src/main/biometric.ts` — biometric unlock (**Linux-specific stub** — see below)
 
 ---
@@ -23,7 +23,8 @@
 - `src/main/database.ts` — copy verbatim
 - `src/main/syncService.ts` — copy verbatim
 - `src/main/networkMonitor.ts` — copy verbatim
-- `src/main/llmService.ts` — copy verbatim (platform-agnostic; just calls the OpenAI HTTP API)
+- `src/main/entryText.ts` — copy verbatim (pure string handling, no platform surface at all)
+- `src/main/exportService.ts` — copy verbatim (`dialog`, `shell` and `node:fs` only; the save and folder pickers resolve to the GTK/portal dialogs on Linux with no code change)
 - `src/main/ipcHandlers.ts` — copy verbatim, THEN apply the Linux-specific modification below
 - `src/main/biometric.ts` — **do NOT copy verbatim**; the Windows version drives Windows Hello via PowerShell. Replace it with the Linux stub below (same exported function signatures, so `ipcHandlers.ts` works unchanged).
 
@@ -119,7 +120,7 @@ The Linux main process file is already complete in `agent-linux-electron-setup.m
 10. Tray → "Quit" exits the app completely
 11. Open Settings → connect to server → Login → verify sync fires
 12. Create entry offline → reconnect → verify auto-sync
-13. Settings → AI Assistant → set OpenAI key → chat panel returns a response
+13. Sidebar → "Export journals" → pick a few entries → Markdown, one file → the file lands where the save dialog said and opens as readable text; repeat with "Include photos and videos" on and confirm the folder holds `media/` with the real files
 14. Lock screen shows passphrase entry only (no biometric button — expected on Linux)
 15. Start with `--hidden` flag → app starts in tray, hidden
 16. `npm run package` → produces `.AppImage` and `.deb` in `dist-electron/`

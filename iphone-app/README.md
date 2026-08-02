@@ -15,7 +15,7 @@
 - Lock on app background
 - Offline-first with background sync
 - Manual date override for journal entries
-- AI Assistant — chat with OpenAI over your entries (same feature as the desktop apps; key stored in Keychain, request goes device → OpenAI directly, never through the sync server)
+- Journal export — write out all entries or a chosen few as Markdown / plain text / JSON files, so they can be handed to an external AI tool or any other app (see below)
 - Rich text with **placed images** — see below
 - Push notification support for sync conflicts (stretch goal)
 
@@ -59,6 +59,27 @@ Requirements for the iPhone client:
 
 See `../ARCHITECTURE.md` §12 for the full model, and
 `../windows-app/AGENT-IMAGE-PLACEMENT-UPDATE.md` for the behaviour checklist the desktop apps pass.
+
+## Journal Export
+
+The desktop apps can write entries out as files (`../ARCHITECTURE.md` §11). The iPhone app should
+offer the same thing through the standard share sheet — the phone equivalent of the desktop's save
+dialog — so an export can go to Files, iCloud Drive, Mail, or straight into another app.
+
+Requirements:
+- **Select** all entries or a subset, from the entry list (multi-select) and from an open entry.
+- **Formats**: Markdown, plain text, JSON. Match the desktop output byte-for-byte where possible —
+  the same headings, the same date formatting, the same attachment placeholders — so a journal
+  exported from a phone and one exported from a laptop read identically.
+- **Render entry HTML to text on device.** `windows-app/src/main/entryText.ts` is the reference
+  implementation and is deliberately dependency-free; port its rules rather than inventing new ones.
+  Blocks separated by a blank line, `<br>` a single newline, `**bold**`/`*italic*` in Markdown only,
+  colour and underline dropped, `<figure>` replaced by a photo/video placeholder.
+- **Attachments are optional.** With them on, the export is a folder (or a zip for the share sheet)
+  containing `media/`; with them off, each one becomes a short placeholder. A file whose bytes have
+  not synced to the phone yet is reported, never silently linked.
+- **Ordering**: oldest first, whatever order the user selected them in.
+- Entirely local — the export must work with no server reachable.
 
 ## Notes
 - Will reuse the same server API and sync protocol

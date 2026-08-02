@@ -3,7 +3,7 @@ import LockScreen from './components/LockScreen';
 import Sidebar from './components/Sidebar';
 import JournalEditor from './components/JournalEditor';
 import Settings from './components/Settings';
-import ChatPanel from './components/ChatPanel';
+import ExportPanel from './components/ExportPanel';
 import { useJournals } from './hooks/useJournals';
 import { useLock } from './hooks/useLock';
 import { useSync } from './hooks/useSync';
@@ -18,9 +18,14 @@ export default function App() {
 
   const [currentView, setCurrentView] = useState<View>('journal');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [chatMode, setChatMode] = useState<'all' | 'single' | null>(null);
+  // Entry ids ticked when the export panel opens; null means the panel is shut.
+  const [exportSelection, setExportSelection] = useState<string[] | null>(null);
 
   const selectedEntry = entries.find(e => e.id === selectedId) || null;
+
+  const openExportAll = useCallback(() => {
+    setExportSelection(entries.filter(e => !e.deleted).map(e => e.id));
+  }, [entries]);
 
   const handleNewEntry = useCallback(async () => {
     const entry = await create({
@@ -78,7 +83,7 @@ export default function App() {
         onSelect={(id) => { setSelectedId(id); setCurrentView('journal'); }}
         onNewEntry={handleNewEntry}
         onOpenSettings={() => setCurrentView('settings')}
-        onAskAi={() => setChatMode('all')}
+        onExport={openExportAll}
         syncStatus={syncStatus}
       />
 
@@ -87,6 +92,7 @@ export default function App() {
           <Settings
             syncStatus={syncStatus}
             onBack={() => setCurrentView('journal')}
+            onExport={openExportAll}
           />
         )}
 
@@ -95,7 +101,7 @@ export default function App() {
             entry={selectedEntry}
             onSave={handleSave}
             onDelete={handleDelete}
-            onAskAi={() => setChatMode('single')}
+            onExport={() => setExportSelection([selectedEntry.id])}
           />
         )}
 
@@ -108,12 +114,11 @@ export default function App() {
         )}
       </main>
 
-      {chatMode && (
-        <ChatPanel
-          mode={chatMode}
+      {exportSelection && (
+        <ExportPanel
           entries={entries}
-          currentEntry={selectedEntry}
-          onClose={() => setChatMode(null)}
+          initialSelection={exportSelection}
+          onClose={() => setExportSelection(null)}
         />
       )}
     </div>

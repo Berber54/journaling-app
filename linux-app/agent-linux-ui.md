@@ -2,13 +2,15 @@
 
 > **Role**: Build the complete React UI for the Linux Electron app.
 > **Prerequisites**: Electron project setup complete (from `agent-linux-electron-setup.md`).
-> **Reference**: `../ARCHITECTURE.md` §11 for design system, §12 for IPC channels.
+> **Reference**: `../ARCHITECTURE.md` §14 for the design system, §15 for IPC channels.
 
 ---
 
 ## Deliverables
 
-Every renderer file the Windows app has — the complete list is the contents of `../windows-app/src/renderer/`. This **includes the AI Assistant** (`components/ChatPanel.tsx` + `styles/chat.css`), which earlier drafts of this spec omitted.
+Every renderer file the Windows app has — the complete list is the contents of `../windows-app/src/renderer/`. This **includes journal export** (`components/ExportPanel.tsx` + `styles/export.css`).
+
+> Earlier drafts of this spec listed an AI Assistant (`ChatPanel.tsx` + `chat.css`). That feature has been removed from the product; the export panel took its place in the sidebar and the editor header. Do not port it.
 
 ---
 
@@ -39,7 +41,7 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 5. `src/renderer/styles/lock.css` — lock screen styles
 6. `src/renderer/styles/sidebar.css` — sidebar styles
 7. `src/renderer/styles/editor.css` — editor styles (includes the placed-image rules)
-8. `src/renderer/styles/chat.css` — AI Assistant styles
+8. `src/renderer/styles/export.css` — export panel styles
 9. `src/renderer/components/LockScreen.tsx` — PIN lock overlay
 10. `src/renderer/components/Sidebar.tsx` — navigation sidebar
 11. `src/renderer/components/JournalList.tsx` — journal list
@@ -47,7 +49,7 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 13. `src/renderer/components/DateTimePicker.tsx` — manual date override
 14. `src/renderer/components/Settings.tsx` — app settings
 15. `src/renderer/components/SyncStatus.tsx` — sync indicator
-16. `src/renderer/components/ChatPanel.tsx` — AI Assistant chat panel
+16. `src/renderer/components/ExportPanel.tsx` — export panel (entry picker + format options)
 17. `src/renderer/components/ImageOverlay.tsx` — image selection ring, resize handles, layout bubble
 18. `src/renderer/hooks/useJournals.ts` — journal CRUD hook
 19. `src/renderer/hooks/useLock.ts` — lock state hook

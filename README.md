@@ -17,7 +17,7 @@ A private, offline-first journaling app that syncs across all your devices via a
 - **Rich-Text Editor** — Bold, italic, underline, and text colors
 - **Placed Photos & Video** — Insert from the toolbar, then drag the file where you want it and pick how the text behaves around it: in line, wrapped, break text, behind or in front — just like Google Docs. Video plays in place
 - **Media Sync That Handles Real Files** — Photos and videos sync to every device over resumable transfers. A 900 MB clip that loses wifi at 95% picks up where it stopped instead of starting over
-- **AI Assistant** — Chat with an OpenAI model about a single entry or your whole journal (API key lives on your server, shared by every device)
+- **Export to Files** — Write out all your entries or just the ones you pick, as Markdown, plain text or JSON. Hand the files to an AI tool of your choosing, move them into another app, or keep a readable backup. Runs entirely on your device
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
 - **Dark Theme** — Premium dark UI with glassmorphism, micro-animations, and Inter font
@@ -48,7 +48,7 @@ A private, offline-first journaling app that syncs across all your devices via a
 | Desktop Apps | Electron 33, React 19, TypeScript 5 |
 | Auth | JWT (HS256, 24h expiry, refreshable) + bcrypt |
 | Sync | Offline-first, last-write-wins conflict resolution |
-| AI | OpenAI Chat Completions, proxied through your server (key stored server-side only) |
+| Export | Markdown / plain text / JSON, written locally — no server, no network |
 | Bundler | Vite 6 |
 | Packaging | electron-builder (NSIS / DMG / AppImage+deb) |
 
@@ -71,7 +71,7 @@ custom_journal/
 │       ├── install.sh       # RPi installation script
 │       └── journal_server.service  # systemd service
 ├── windows-app/             ← Windows Electron app
-│   ├── src/main/            # Main process (Alt+L, blur-lock, IPC)
+│   ├── src/main/            # Main process (Alt+L, blur-lock, IPC, export)
 │   ├── src/renderer/        # React UI (components, hooks, styles)
 │   ├── src/preload/         # Secure IPC bridge
 │   └── AGENT-IMAGE-PLACEMENT-UPDATE.md  # Image placement: what changed + Windows test checklist
@@ -114,7 +114,6 @@ nano .env  # Set JWT_SECRET, PORT (default 3377), etc.
            # MEDIA_PATH is where photo/video bytes go (default ./data/media) —
            # point it at an external SSD if your SD card is small.
            # MAX_MEDIA_BYTES caps a single file (default 2 GB).
-           # OPENAI_API_KEY enables the AI assistant for every device.
 
 # Install as a systemd service
 sudo cp scripts/journal_server.service /etc/systemd/system/
@@ -128,9 +127,7 @@ sudo systemctl restart journal_server
 
 # Verify
 curl http://localhost:3377/api/health
-# → {"status":"ok","version":"1.0.0","uptime":...,"ai":"configured"}
-# "ai":"not-configured" means this process has no OPENAI_API_KEY — the apps will
-# report that the assistant isn't set up on the server until you set it and restart.
+# → {"status":"ok","version":"1.0.0","uptime":...}
 ```
 
 > **Backups:** back up both the database (`DB_PATH`) *and* the media directory (`MEDIA_PATH`). Metadata without blobs leaves every device showing placeholders that never resolve; blobs without metadata are unaddressable files named by UUID.
@@ -173,7 +170,7 @@ npm run package          # Creates installer in dist-electron/
 | Password storage | bcrypt (12 rounds) on server |
 | Context isolation | Electron contextIsolation on + nodeIntegration off; renderer talks to the OS only through a locked-down preload bridge |
 | Data at rest | Local SQLite in Electron's userData directory |
-| OpenAI key | Stored only on the server (`OPENAI_API_KEY` in the server `.env`); clients call `POST /api/llm/chat` and never hold the key |
+| Exported files | Ordinary files outside the app's protection — not covered by the passphrase lock. Nothing is ever written without a save dialog you drove |
 
 ---
 
@@ -198,6 +195,39 @@ When offline, all changes are saved locally with `synced=0`. When the network re
 A file arrives on another device as a correctly-sized "Downloading…" placeholder in exactly the right spot, and fills in — playable, if it's a video — the moment its bytes land. No reopening the entry.
 
 > **Upgrading from an earlier build?** Your existing photos are migrated automatically on both the server and each device, keeping their ids so entries keep pointing at them. Update the server first: a new app talking to an old server refuses to sync rather than quietly leaving your media behind.
+
+---
+
+## 📤 Exporting Your Journal
+
+Your entries can leave the app as ordinary files — to feed to an AI tool of your choosing, to move into another app, or just to keep somewhere readable.
+
+**Where to start it**
+
+| From | What gets ticked |
+|---|---|
+| Sidebar → **Export journals** | every entry |
+| An open entry → **Export this entry** | just that one |
+| Settings → Export → **Export journals…** | every entry |
+
+The panel then lets you tick and untick individual entries, grouped by month.
+
+**Options**
+
+| Choice | Options |
+|---|---|
+| Format | **Markdown** (`.md`) — headings, dates, bold/italic preserved · **Plain text** (`.txt`) — just the words · **JSON** (`.json`) — every field, including the original HTML, for scripts |
+| Layout | **One file with every entry** (oldest first, separated by rules) or **one file per entry** (`2025-07-14-rain-on-the-roof.md`) |
+| Photos and videos | Off by default. On, they're copied into a `media/` folder beside the text and linked from it |
+
+One file with no attachments gives you a save dialog and a single file exactly where you point it. Anything else asks for a folder and creates a dated `journal-export-…/` inside it.
+
+**Worth knowing**
+
+- **Nothing is uploaded.** The export is written from this device's own database — no server, no network. It works offline.
+- **Entries come out oldest first**, whatever order you ticked them in, so a model reading them sees your journal in the order you lived it.
+- **An attachment that hasn't synced to this device yet can't be exported.** It's flagged in the panel and marked in the text rather than written as a link to a file that isn't there.
+- **Exported files are outside the app's lock.** Deleting an entry later doesn't touch a copy you already exported.
 
 ---
 
@@ -244,9 +274,10 @@ A file arrives on another device as a correctly-sized "Downloading…" placehold
 | GET | `/media/:id/status` | Yes | How much of a file the server holds (the resume cursor) |
 | PUT | `/media/:id?offset=N` | Yes | Upload raw bytes from byte N — resumable, streamed to disk |
 | GET | `/media/:id` | Yes | Download a file, whole or by `Range` (what video seeking uses) |
-| POST | `/llm/chat` | Yes | AI assistant — server proxies `{ model, messages }` to OpenAI using the server's key |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, and §8 for the sync protocol.
+
+> Export is not in this table on purpose — it never touches the server. Entries are written to files straight from the device's own database, so it works offline. See [ARCHITECTURE.md](ARCHITECTURE.md) §11.
 
 ---
 
@@ -262,12 +293,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, an
 - [x] Google-Docs-style image placement — drag to position, corner-resize, five text-wrapping modes
 - [x] Video attachments — placed and played inline, synced like photos
 - [x] Resumable media transfers — interrupted uploads and downloads continue instead of restarting
-- [x] AI assistant over your entries (OpenAI, key held on the server)
+- [x] Export entries to Markdown / plain text / JSON files, all or a selected few
 - [x] Windows Hello biometric unlock
 - [ ] iPhone app (React Native or native Swift)
 - [ ] Journal search (full-text search via SQLite FTS5)
 - [ ] Journal tags / categories
-- [ ] Export to PDF / Markdown files
+- [ ] Export to PDF
 - [ ] End-to-end encryption (AES-256-GCM)
 - [ ] Voice memo attachments
 

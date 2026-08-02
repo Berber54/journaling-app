@@ -9,7 +9,6 @@ import { authRouter } from './routes/auth.js';
 import { healthRouter } from './routes/health.js';
 import { journalsRouter } from './routes/journals.js';
 import { syncRouter } from './routes/sync.js';
-import { llmRouter } from './routes/llm.js';
 import { mediaRouter } from './routes/media.js';
 import { migrateLegacyImages } from './services/mediaMigration.js';
 
@@ -37,7 +36,6 @@ app.use('/api/auth', authRouter);
 app.use('/api/journals', journalsRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/sync', syncRouter);
-app.use('/api/llm', llmRouter);
 
 app.use(errorHandler);
 
@@ -51,18 +49,6 @@ const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`[server] Database: ${config.dbPath}`);
   console.log(`[server] Media blobs: ${config.mediaPath} (max ${config.maxMediaBytes} bytes per file)`);
   console.log(`[server] Config: ${envFileStatus}`);
-  // Say this at startup rather than leaving it to be discovered by a client
-  // getting a 503 mid-conversation: a key in the wrong file, or a service that
-  // never reloaded after the key was added, looks identical from the app.
-  if (config.openaiApiKey) {
-    console.log(`[server] AI assistant: enabled (proxying to ${config.openaiBaseUrl})`);
-  } else {
-    console.warn(
-      '[server] AI assistant: DISABLED — OPENAI_API_KEY is not set in this process. ' +
-        'POST /api/llm/chat will return 503 and the desktop apps will report that the ' +
-        'assistant is not configured on the server. Set it in the .env named above and restart.'
-    );
-  }
 });
 
 function shutdown(signal: string): void {

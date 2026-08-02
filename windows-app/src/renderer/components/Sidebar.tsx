@@ -9,7 +9,7 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onNewEntry: () => void;
   onOpenSettings: () => void;
-  onAskAi: () => void;
+  onExport: () => void;
   syncStatus: { online: boolean; lastSync: string | null; pendingCount: number; syncing: boolean };
 }
 
@@ -30,7 +30,7 @@ function contentPreview(content: string): string {
   return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
-export default function Sidebar({ entries, selectedId, onSelect, onNewEntry, onOpenSettings, onAskAi, syncStatus }: SidebarProps) {
+export default function Sidebar({ entries, selectedId, onSelect, onNewEntry, onOpenSettings, onExport, syncStatus }: SidebarProps) {
   // Group entries by month/year
   const grouped = useMemo(() => {
     const groups: Map<string, JournalEntry[]> = new Map();
@@ -88,8 +88,8 @@ export default function Sidebar({ entries, selectedId, onSelect, onNewEntry, onO
       </div>
 
       <div className="sidebar-footer">
-        <button className="sidebar-ai-btn" onClick={onAskAi}>
-          ✦ Ask AI about all entries
+        <button className="sidebar-export-btn" onClick={onExport}>
+          ⤓ Export journals
         </button>
         <div className="sidebar-footer-row">
           <button className="sidebar-settings-btn" onClick={onOpenSettings}>

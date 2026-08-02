@@ -73,10 +73,34 @@ export interface JournalMedia {
   created_at: string;
 }
 
-// ─── LLM Chat ────────────────────────────────────────────────
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+// ─── Export ──────────────────────────────────────────────────
+// Entries leave the app as plain files so they can be handed to anything that
+// reads text — an external LLM, another journal, a backup folder. Nothing about
+// this touches the server: the local database already holds every entry.
+
+export type ExportFormat = 'markdown' | 'text' | 'json';
+
+/** One file holding every entry, or one file per entry. */
+export type ExportLayout = 'single' | 'per-entry';
+
+export interface ExportOptions {
+  /** Entry ids to export, or `null` for every (non-deleted) entry. */
+  ids: string[] | null;
+  format: ExportFormat;
+  layout: ExportLayout;
+  /** Copy the referenced photos and videos alongside the text. */
+  includeMedia: boolean;
+}
+
+export interface ExportResult {
+  /** True when the user dismissed the save/folder dialog — not an error. */
+  canceled: boolean;
+  /** The file (single, no media) or the folder that was written. */
+  path: string;
+  entryCount: number;
+  fileCount: number;
+  /** Attachments left out because their bytes haven't synced to this device. */
+  missingMediaCount: number;
 }
 
 // ─── Sync Payloads ───────────────────────────────────────────
@@ -180,8 +204,10 @@ export interface ElectronAPI {
   biometricAvailable: () => Promise<boolean>;
   biometricVerify: (reason?: string) => Promise<boolean>;
 
-  // LLM (OpenAI) — chat over journal entries
-  llmChat: (params: { model: string; messages: ChatMessage[] }) => Promise<string>;
+  // Export — write entries out as files (Markdown / plain text / JSON)
+  exportRun: (options: ExportOptions) => Promise<ExportResult>;
+  /** Open the OS file manager on a finished export. */
+  exportReveal: (target: string) => Promise<void>;
 
   // Settings
   settingsGet: (key: string) => Promise<string | null>;

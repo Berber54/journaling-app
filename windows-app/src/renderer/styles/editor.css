@@ -68,7 +68,7 @@
   gap: 4px;
 }
 
-.editor-ai-btn {
+.editor-export-btn {
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -85,7 +85,7 @@
   transition: background var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.editor-ai-btn:hover {
+.editor-export-btn:hover {
   background: var(--accent-primary);
   color: #fff;
   box-shadow: 0 0 16px -4px var(--accent-glow);

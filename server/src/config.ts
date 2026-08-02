@@ -11,7 +11,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 // WorkingDirectory (systemd, pm2, a shell in $HOME) otherwise silently gets no
 // .env at all — and because dbPath/mediaPath below are resolved against
 // PROJECT_ROOT, the database and media keep working, so the *only* visible
-// symptom is that .env-only settings like OPENAI_API_KEY come up empty.
+// symptom is that .env-only settings like JWT_SECRET or MAX_MEDIA_BYTES come up
+// as their defaults.
 const ENV_PATH = path.resolve(PROJECT_ROOT, '.env');
 const rootEnv = dotenv.config({ path: ENV_PATH });
 // Still honour a .env in the working directory, but only for keys the install's
@@ -39,21 +40,7 @@ export const config = {
   maxMediaBytes: parseInt(process.env.MAX_MEDIA_BYTES || String(2 * 1024 * 1024 * 1024), 10),
   jwtExpiresIn: '24h',
   bcryptRounds: 12,
-  // ─── AI assistant ──────────────────────────────────────────
-  // The OpenAI API key now lives on the server (never on the clients). The
-  // desktop apps call POST /api/llm/chat and the server proxies to OpenAI, so
-  // the key is stored in exactly one place. Empty string = AI disabled.
-  // Trimmed because a key pasted into .env with a trailing space or newline is
-  // still a key — untrimmed it reaches OpenAI as a malformed header and comes
-  // back as a confusing 401. A whitespace-only value counts as unset.
-  openaiApiKey: (process.env.OPENAI_API_KEY || '').trim(),
-  openaiBaseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim(),
 } as const;
-
-// Models the LLM proxy is allowed to forward (guards against clients asking the
-// server to spend on an arbitrary/expensive model). Keep in sync with the model
-// picker in the desktop apps' ChatPanel/Settings.
-export const ALLOWED_LLM_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'] as const;
 
 if (config.jwtSecret === 'change-me-to-random-64-char-string' && config.nodeEnv === 'production') {
   console.error('FATAL: JWT_SECRET must be changed in production. Generate one with:');

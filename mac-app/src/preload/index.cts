@@ -49,8 +49,9 @@ const electronAPI: ElectronAPI = {
   biometricAvailable: () => ipcRenderer.invoke('biometric:available'),
   biometricVerify: (reason?: string) => ipcRenderer.invoke('biometric:verify', reason),
 
-  // ─── LLM (OpenAI) ──────────────────────────────────────────
-  llmChat: (params) => ipcRenderer.invoke('llm:chat', params),
+  // ─── Export ────────────────────────────────────────────────
+  exportRun: (options) => ipcRenderer.invoke('export:run', options),
+  exportReveal: (target: string) => ipcRenderer.invoke('export:reveal', target),
 
   // ─── Settings ──────────────────────────────────────────────
   settingsGet: (key: string) => ipcRenderer.invoke('settings:get', key),

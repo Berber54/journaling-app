@@ -4,9 +4,11 @@ import type { SyncStatus } from '../../shared/types';
 interface SettingsProps {
   syncStatus: SyncStatus;
   onBack: () => void;
+  /** Open the export panel with every entry ticked. */
+  onExport: () => void;
 }
 
-export default function Settings({ syncStatus, onBack }: SettingsProps) {
+export default function Settings({ syncStatus, onBack, onExport }: SettingsProps) {
   const [serverUrl, setServerUrl] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -22,13 +24,6 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
   // Windows Hello state
   const [bioOsAvailable, setBioOsAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(true);
-
-  // AI assistant state — the API key now lives on the server, so the client
-  // only keeps the preferred model (sent to the server on each request).
-  const [aiModel, setAiModel] = useState('gpt-4o');
-  const [aiSaved, setAiSaved] = useState(false);
-
-  const AI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'];
 
   const MIN_PASSWORD_LENGTH = 6;
 
@@ -46,18 +41,9 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
       const pref = await window.electronAPI.settingsGet('biometric_enabled');
       setBioOsAvailable(osBio);
       setBioEnabled(pref !== 'false');
-
-      const model = await window.electronAPI.settingsGet('openai_model');
-      if (model) setAiModel(model);
     };
     loadSettings();
   }, []);
-
-  const handleSaveAi = async () => {
-    await window.electronAPI.settingsSet('openai_model', aiModel);
-    setAiSaved(true);
-    setTimeout(() => setAiSaved(false), 2000);
-  };
 
   const handleToggleBiometric = async () => {
     const next = !bioEnabled;
@@ -221,35 +207,23 @@ export default function Settings({ syncStatus, onBack }: SettingsProps) {
         </section>
       )}
 
-      {/* AI Assistant (OpenAI) */}
+      {/* Export */}
       <section style={{ marginBottom: '32px' }}>
         <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          AI Assistant
+          Export
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Chat with an assistant about your journal. The OpenAI API key is held on your server —
-            not on this device — so the assistant works whenever you're connected to the server.
-            Choose the model requests should use.
+            Write your entries out as Markdown, plain text or JSON files — all of them or just the
+            ones you pick. Use it to feed your journal to an AI tool of your choosing, move it into
+            another app, or keep a readable copy. The files are written straight from this device;
+            nothing is uploaded anywhere.
           </p>
-          <label style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            Default model
-            <select
-              className="input"
-              value={aiModel}
-              onChange={(e) => setAiModel(e.target.value)}
-            >
-              {AI_MODELS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </label>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-primary" onClick={handleSaveAi}>
-              Save
+            <button className="btn btn-primary" onClick={onExport}>
+              Export journals…
             </button>
           </div>
-          {aiSaved && <p style={{ fontSize: '13px', color: 'var(--success)' }}>Saved</p>}
         </div>
       </section>
 

@@ -39,8 +39,7 @@ export function nowISO(): string {
 }
 
 /**
- * Convert stored entry HTML (rich text) into plain text — used when feeding
- * entries to the LLM and for previews.
+ * Convert stored entry HTML (rich text) into plain text — used for previews.
  */
 export function htmlToText(html: string): string {
   const tmp = document.createElement('div');
