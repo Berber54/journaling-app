@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import LockScreen from './components/LockScreen';
 import Sidebar from './components/Sidebar';
 import JournalEditor from './components/JournalEditor';
@@ -7,21 +7,58 @@ import ExportPanel from './components/ExportPanel';
 import { useJournals } from './hooks/useJournals';
 import { useLock } from './hooks/useLock';
 import { useSync } from './hooks/useSync';
+import { useTheme } from './hooks/useTheme';
 import { nowISO } from './lib/utils';
 
 type View = 'journal' | 'settings';
+
+/** app_config key holding whether the sidebar is collapsed (local to this device). */
+const SIDEBAR_SETTING_KEY = 'sidebar_collapsed';
 
 export default function App() {
   const { entries, loading: journalsLoading, create, update, remove, refresh } = useJournals();
   const { locked, hasPin, loading: lockLoading, bioAvailable, unlock, unlockWithBiometric, setPin } = useLock();
   const syncStatus = useSync();
+  const { theme, setTheme } = useTheme();
 
   const [currentView, setCurrentView] = useState<View>('journal');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Entry ids ticked when the export panel opens; null means the panel is shut.
   const [exportSelection, setExportSelection] = useState<string[] | null>(null);
 
   const selectedEntry = entries.find(e => e.id === selectedId) || null;
+
+  // Restore the sidebar the way it was left.
+  useEffect(() => {
+    let active = true;
+    window.electronAPI.settingsGet(SIDEBAR_SETTING_KEY).then((value) => {
+      if (active) setSidebarCollapsed(value === 'true');
+    });
+    return () => { active = false; };
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      window.electronAPI.settingsSet(SIDEBAR_SETTING_KEY, next ? 'true' : 'false');
+      return next;
+    });
+  }, []);
+
+  // Ctrl/Cmd + \ toggles the sidebar. Kept off Ctrl+B — that's bold in the editor.
+  // Ignored while locked: there is no sidebar to toggle behind the lock screen.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (locked) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === '\\') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleSidebar, locked]);
 
   const openExportAll = useCallback(() => {
     setExportSelection(entries.filter(e => !e.deleted).map(e => e.id));
@@ -76,7 +113,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar
         entries={entries}
         selectedId={selectedId}
@@ -85,6 +122,8 @@ export default function App() {
         onOpenSettings={() => setCurrentView('settings')}
         onExport={openExportAll}
         syncStatus={syncStatus}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
       />
 
       <main className="main-content">
@@ -93,6 +132,8 @@ export default function App() {
             syncStatus={syncStatus}
             onBack={() => setCurrentView('journal')}
             onExport={openExportAll}
+            theme={theme}
+            onThemeChange={setTheme}
           />
         )}
 

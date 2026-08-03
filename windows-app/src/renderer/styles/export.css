@@ -5,7 +5,7 @@
   z-index: 900;
   display: flex;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--overlay-scrim);
   backdrop-filter: blur(2px);
   animation: fadeIn 0.15s ease-out;
 }
@@ -78,8 +78,8 @@
 .export-count {
   font-size: 12px;
   color: var(--accent-primary);
-  background: rgba(63, 111, 214, 0.12);
-  border: 1px solid rgba(63, 111, 214, 0.3);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 32%, transparent);
   padding: 2px 8px;
   white-space: nowrap;
 }

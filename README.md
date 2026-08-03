@@ -20,7 +20,9 @@ A private, offline-first journaling app that syncs across all your devices via a
 - **Export to Files** — Write out all your entries or just the ones you pick, as Markdown, plain text or JSON. Hand the files to an AI tool of your choosing, move them into another app, or keep a readable backup. Runs entirely on your device
 - **Editable Timestamps** — Backdate entries when importing from other journals
 - **Auto-Sync** — Syncs on save, on reconnect, and every 5 minutes in the background
-- **Dark Theme** — Premium dark UI with glassmorphism, micro-animations, and Inter font
+- **Collapsible Entry List** — Fold the left sidebar down to a slim icon rail (or back) with the toggle or **Ctrl/Cmd + \\**, for a full-width writing surface. New entry, export, settings and sync stay one click away, and the app reopens the way you left it
+- **Private Entry List** — The sidebar shows title and date only. No snippet of what you wrote is ever displayed next to it
+- **Colour Themes** — Six dark palettes, switchable in Settings → Appearance: Midnight, **Pure Black** (true `#000`, for OLED), Graphite, Evergreen, Plum and Ember. Applies instantly, stays on that device
 
 ---
 
@@ -49,6 +51,7 @@ A private, offline-first journaling app that syncs across all your devices via a
 | Auth | JWT (HS256, 24h expiry, refreshable) + bcrypt |
 | Sync | Offline-first, last-write-wins conflict resolution |
 | Export | Markdown / plain text / JSON, written locally — no server, no network |
+| Theming | CSS variables per theme, selected by `data-theme` on `<html>`; the window's own background colour follows |
 | Bundler | Vite 6 |
 | Packaging | electron-builder (NSIS / DMG / AppImage+deb) |
 
@@ -74,6 +77,7 @@ custom_journal/
 │   ├── src/main/            # Main process (Alt+L, blur-lock, IPC, export)
 │   ├── src/renderer/        # React UI (components, hooks, styles)
 │   ├── src/preload/         # Secure IPC bridge
+│   ├── src/shared/themes.ts # Colour theme catalogue (used by main *and* renderer)
 │   └── AGENT-IMAGE-PLACEMENT-UPDATE.md  # Image placement: what changed + Windows test checklist
 ├── mac-app/                 ← macOS Electron app
 │   ├── src/main/            # Main process (Cmd+L, dock, hiddenInset)
@@ -154,7 +158,8 @@ npm run package          # Creates installer in dist-electron/
 1. Launch the app → you'll be prompted to **create a 6-digit PIN**
 2. Open **Settings** → enter your server URL (e.g., `http://192.168.1.50:3377`)
 3. **Register** a new account or **Login** with existing credentials
-4. Start journaling! Entries auto-sync in the background
+4. While you're in Settings, pick a **theme** under Appearance (Midnight, Pure Black, …)
+5. Start journaling! Entries auto-sync in the background
 
 ---
 
@@ -231,22 +236,43 @@ One file with no attachments gives you a save dialog and a single file exactly w
 
 ---
 
+## 🎨 Appearance
+
+**The entry list folds away.** The « button in the sidebar header — or **Ctrl + \\** (**Cmd + \\** on macOS) — collapses it to a 56px rail, giving the editor the full window. The rail keeps the buttons that matter: new entry, export, settings, and the sync dot. Press it again (or click ») to bring the list back. The app remembers the state per device, so it opens the way you left it.
+
+The list itself shows **title and date only**. It deliberately shows no preview of an entry's text — an open journal shouldn't put yesterday's words on screen beside today's.
+
+**Six themes**, in **Settings → Appearance**:
+
+| Theme | Background | Notes |
+|---|---|---|
+| **Midnight** *(default)* | `#060a15` | Deep navy with a blue accent — the original look |
+| **Pure Black** | `#000000` | True black, no tint. Sidebar and page are the same black, split by a single hairline; the lock screen's coloured glow is switched off so nothing breaks it. The one to pick for an OLED panel |
+| **Graphite** | `#101011` | Neutral charcoal with teal |
+| **Evergreen** | `#060f0b` | Forest green, low glare |
+| **Plum** | `#0b0714` | Dark violet |
+| **Ember** | `#100a06` | Warm sepia and burnt orange |
+
+Picking one repaints every surface immediately — no restart. The choice is **local to that device** (it lives beside your other settings, not in your journal), so a laptop can be pure black while the desktop stays navy. The window itself opens in the theme's colour, so there's no flash of the wrong background at launch.
+
+---
+
 ## 🖥️ Platform Specifics
 
 ### Windows
-- Standard window frame, Alt+L lock hotkey
+- Standard window frame, Alt+L lock hotkey, Ctrl+\\ sidebar toggle
 - NSIS installer (`.exe`) — pinnable to taskbar, shows in Start Menu/Search
 - App quits on window close
 
 ### macOS
-- Hidden titlebar with inset traffic lights (`titleBarStyle: 'hiddenInset'`)
-- Cmd+L lock hotkey
+- Hidden titlebar with inset traffic lights (`titleBarStyle: 'hiddenInset'`) — the collapsed rail takes over as the drag region and clears the traffic lights
+- Cmd+L lock hotkey, Cmd+\\ sidebar toggle
 - DMG packaging — drag to Applications
 - Stays in dock when window closed (standard macOS behavior)
 - Dock badge shows unsynced entry count
 
 ### Linux *(planned — the design below is not built yet)*
-- Standard window frame, Alt+L lock hotkey
+- Standard window frame, Alt+L lock hotkey, Ctrl+\\ sidebar toggle
 - System tray icon with Show/Hide, Sync Now, Quit menu
 - Close minimizes to tray (app keeps running)
 - `--hidden` flag for autostart support
@@ -295,6 +321,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) §7 for full request/response schemas, an
 - [x] Resumable media transfers — interrupted uploads and downloads continue instead of restarting
 - [x] Export entries to Markdown / plain text / JSON files, all or a selected few
 - [x] Windows Hello biometric unlock
+- [x] Collapsible entry list (icon rail + Ctrl/Cmd + \\)
+- [x] Colour themes, including a pure-black OLED theme
 - [ ] iPhone app (React Native or native Swift)
 - [ ] Journal search (full-text search via SQLite FTS5)
 - [ ] Journal tags / categories

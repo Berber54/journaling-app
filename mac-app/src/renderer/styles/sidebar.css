@@ -7,11 +7,118 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width var(--transition-normal), min-width var(--transition-normal);
+}
+
+/* Collapsed: the entry list is gone, but every action it held stays reachable
+   from a narrow rail, so nothing is lost by hiding the list. */
+.sidebar.collapsed {
+  width: 56px;
+  min-width: 56px;
+  align-items: center;
 }
 
 .sidebar-header {
   padding: 20px 16px 14px;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* The title carries its own bottom margin when it stands alone; inside the
+   header row the row owns the spacing. */
+.sidebar-header-top .sidebar-title {
+  margin-bottom: 0;
+}
+
+.sidebar-collapse-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-collapse-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-default);
+}
+
+/* ─── Collapsed rail ────────────────────────────────────────── */
+.sidebar-rail {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 0 12px;
+}
+
+/* Pushes the footer icons to the bottom, mirroring the expanded layout. */
+.sidebar-rail-spacer {
+  flex: 1;
+}
+
+.sidebar-rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-rail-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-default);
+}
+
+.sidebar-rail-btn.primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+  font-size: 18px;
+}
+
+.sidebar-rail-btn.primary:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 0 18px -4px var(--accent-glow);
+}
+
+.sidebar-rail-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 2px 0;
 }
 
 .sidebar-title {
@@ -99,14 +206,6 @@
 .sidebar-entry-date {
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.sidebar-entry-preview {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .sidebar-entry-unsynced {

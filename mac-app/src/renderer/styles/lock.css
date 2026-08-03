@@ -9,8 +9,8 @@
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(109, 94, 252, 0.12), transparent 60%),
-    rgba(8, 8, 10, 0.92);
+    radial-gradient(1200px 600px at 50% -10%, var(--lock-glow), transparent 60%),
+    var(--lock-scrim);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }

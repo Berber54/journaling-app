@@ -160,7 +160,9 @@ Terminal=false
 
 ## Step 5: Shared Types & Preload
 
-Create **`src/shared/types.ts`** and **`src/preload/index.cts`** — identical to Windows. Copy from `../windows-app/src/shared/types.ts` and `../windows-app/src/preload/index.cts`. `types.ts` includes the `ExportOptions` / `ExportResult` types, and the preload exposes every IPC channel including `biometricAvailable` / `biometricVerify` and `exportRun` / `exportReveal` (journal export).
+Create **`src/shared/types.ts`**, **`src/shared/themes.ts`** and **`src/preload/index.cts`** — identical to Windows. Copy from `../windows-app/src/shared/types.ts`, `../windows-app/src/shared/themes.ts` and `../windows-app/src/preload/index.cts`. `types.ts` includes the `ExportOptions` / `ExportResult` types, and the preload exposes every IPC channel including `biometricAvailable` / `biometricVerify` and `exportRun` / `exportReveal` (journal export).
+
+`themes.ts` is the colour theme catalogue (`../ARCHITECTURE.md` §14). It sits in `shared/` because **both** processes need it: the renderer builds the theme picker from it, and `main/index.ts` uses `themeBackground()` for the window's background colour (Step 6). No new IPC channel is involved — the chosen theme is an ordinary `app_config` value read through `settings:get` / `settings:set`.
 
 ---
 
@@ -174,7 +176,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipcHandlers.js';
 import { startNetworkMonitor, stopNetworkMonitor } from './networkMonitor.js';
-import { closeDatabase } from './database.js';
+import { closeDatabase, getConfig } from './database.js';
+import { THEME_SETTING_KEY, themeBackground } from '../shared/themes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,7 +196,9 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     frame: true, // Standard window frame on Linux
-    backgroundColor: '#0f0f14',
+    // The saved theme's --bg-primary, so the window opens in the colour the UI
+    // is about to paint instead of flashing another theme's background.
+    backgroundColor: themeBackground(getConfig(THEME_SETTING_KEY)),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -381,12 +386,13 @@ Hidden=false
 2. `npm run dev` — app opens with standard Linux window frame
 3. Alt+L → app locks
 4. Click away from window → app locks
-5. System tray icon appears → right-click shows context menu
-6. Click "Show/Hide" in tray → window toggles
-7. Close window → app hides to tray (doesn't quit)
-8. Click "Quit" in tray → app exits
-9. `npm run package` — produces `.AppImage` and `.deb` in `dist-electron/`
-10. `.AppImage` is executable and launches correctly
-11. App appears in application launcher/search after `.deb` install
+5. With `theme` set to `black` in `app_config`, the window paints black from the first frame — no navy flash before the UI loads
+6. System tray icon appears → right-click shows context menu
+7. Click "Show/Hide" in tray → window toggles
+8. Close window → app hides to tray (doesn't quit)
+9. Click "Quit" in tray → app exits
+10. `npm run package` — produces `.AppImage` and `.deb` in `dist-electron/`
+11. `.AppImage` is executable and launches correctly
+12. App appears in application launcher/search after `.deb` install
 
 > **Next**: Linux UI agent (`agent-linux-ui.md`) and data-sync agent (`agent-linux-data-sync.md`).

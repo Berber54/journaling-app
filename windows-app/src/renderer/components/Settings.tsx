@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import type { SyncStatus } from '../../shared/types';
+import { THEMES, type ThemeId } from '../../shared/themes';
 
 interface SettingsProps {
   syncStatus: SyncStatus;
   onBack: () => void;
   /** Open the export panel with every entry ticked. */
   onExport: () => void;
+  theme: ThemeId;
+  onThemeChange: (theme: ThemeId) => void;
 }
 
-export default function Settings({ syncStatus, onBack, onExport }: SettingsProps) {
+export default function Settings({ syncStatus, onBack, onExport, theme, onThemeChange }: SettingsProps) {
   const [serverUrl, setServerUrl] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -105,6 +108,38 @@ export default function Settings({ syncStatus, onBack, onExport }: SettingsProps
         </button>
         <h2 style={{ fontSize: '20px', fontWeight: 600 }}>Settings</h2>
       </div>
+
+      {/* Appearance — theme */}
+      <section style={{ marginBottom: '32px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Appearance
+        </h3>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '12px' }}>
+          The colour of every surface in the app. Applies immediately and stays on this
+          device — themes are not synced.
+        </p>
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`theme-card ${theme === t.id ? 'active' : ''}`}
+              onClick={() => onThemeChange(t.id)}
+              aria-pressed={theme === t.id}
+              title={t.description}
+            >
+              <span className="theme-swatch" aria-hidden="true">
+                <span className="theme-swatch-surface" style={{ background: t.background }} />
+                <span className="theme-swatch-accent" style={{ background: t.accent }} />
+              </span>
+              <span className="theme-card-text">
+                <span className="theme-card-name">{t.label}</span>
+                <span className="theme-card-desc">{t.description}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Server Connection */}
       <section style={{ marginBottom: '32px' }}>

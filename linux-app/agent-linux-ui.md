@@ -24,9 +24,15 @@ Linux uses a **standard window frame** (`frame: true`), just like Windows. There
 
 ## Linux-Specific CSS Notes
 
-The only minor CSS difference is scrollbar styling. In **`src/renderer/styles/global.css`**, the scrollbar styles from the Windows version work perfectly on Linux since Electron uses Chromium's rendering engine on all platforms. The `::-webkit-scrollbar` selectors work identically.
+The only minor CSS difference is scrollbar styling. In **`src/renderer/styles/global.css`**, the scrollbar styles from the Windows version work perfectly on Linux since Electron uses Chromium's rendering engine on all platforms. The `::-webkit-scrollbar` selectors work identically. (They read `var(--scrollbar-thumb)` so they follow the active theme — don't paste a literal `rgba(255,255,255,.1)` back in.)
 
 No additional CSS modifications are needed.
+
+**Copy `global.css` whole.** Most of it is now the six `:root[data-theme='…']` colour-theme blocks
+(§14 of `../ARCHITECTURE.md`). Every surface colour in the app comes from those variables, so
+dropping or trimming a block leaves that theme half-painted. The macOS-specific tail of the mac
+app's `global.css` — drag regions, traffic-light padding, the collapsed-rail offsets — is **not**
+wanted on Linux: copy from `../windows-app/`, which has none of it.
 
 ---
 
@@ -57,6 +63,39 @@ Copy each of these files exactly from `../windows-app/src/renderer/`:
 21. `src/renderer/lib/ipc.ts` — IPC wrapper
 22. `src/renderer/lib/utils.ts` — utility functions
 23. `src/renderer/lib/docImages.ts` — placed-image model (figure placeholders, hydrate/serialize)
+24. `src/renderer/hooks/useTheme.ts` — colour theme hook (reads/writes the `theme` setting, stamps `data-theme`)
+
+`src/shared/themes.ts` — the theme catalogue — is copied as part of Step 5 of
+`agent-linux-electron-setup.md`, not here: the **main** process imports it too.
+
+---
+
+## The Sidebar Collapses, and Shows No Previews
+
+Two behaviours in `Sidebar.tsx` that are easy to lose in a copy — check both after porting.
+
+**Collapsible.** The sidebar has two states, driven by `collapsed` / `onToggleCollapse` props that
+`App.tsx` owns:
+
+| State | Width | What's in it |
+|---|---|---|
+| Expanded | 260px | Header (title + « toggle), New Entry, entries grouped by month, export/settings/sync footer |
+| Collapsed | 56px | An icon rail: » toggle, **+** new entry, then ⤓ export, ⚙ settings and the sync dot at the bottom |
+
+- The rail carries every action the expanded footer has. Collapsing must never strand the user with
+  no way to reach settings or export.
+- `App.tsx` persists the state in `app_config` under `sidebar_collapsed` and restores it at launch,
+  and binds **Ctrl + \\** (the `metaKey` branch is for macOS; on Linux it's Ctrl) to the toggle.
+  Not Ctrl+B — that's bold in the editor.
+- `SyncStatus` takes a `compact` prop for the rail: the dot only, label moved into the tooltip.
+- The layout wrapper gets a `sidebar-collapsed` class alongside `app-layout`. On Linux nothing keys
+  off it (it exists for the macOS traffic-light offsets), but keep it so the three apps stay
+  diffable.
+
+**No content previews.** The entry list shows **title and date only**. Do not reintroduce
+`.sidebar-entry-preview` or a `contentPreview()` helper that renders entry HTML into a snippet — the
+list sits permanently beside the editor, and an entry's text should not be on screen unless it was
+opened. `htmlToText()` stays in `lib/utils.ts` for other callers; the sidebar simply doesn't use it.
 
 ---
 
@@ -101,18 +140,25 @@ drag, drop and corner-resize all run on `pointerdown`/`pointermove`/`pointerup`.
 1. `npm run dev:renderer` — Vite starts on port 5173
 2. Lock screen appears with glassmorphism effect
 3. PIN entry works (create and unlock)
-4. Sidebar renders with journal entries grouped by month
+4. Sidebar renders with journal entries grouped by month — **title and date only, no text preview**
 5. Journal editor with auto-save and date picker
 6. Settings panel with server connection and sync controls
 7. All animations work: fade-in, slide-in, shake, pulse
 8. Scrollbars render with dark theme styling
-9. Toolbar image icon inserts a picture at the caret, selected, on its own line
-10. Clicking an image shows the outline, four corner handles and the layout bubble
-11. Dragging an image shows a blue drop caret and moves it through the text; "behind"/"front"
+9. The « button and **Ctrl + \\** both collapse the sidebar to the icon rail; » and the shortcut
+   bring it back; the rail's +, ⤓ and ⚙ all still work
+10. The collapsed/expanded state survives a restart (it's written to `app_config`)
+11. Settings → Appearance lists six themes; clicking one repaints the whole window instantly,
+    including the lock screen and the export panel, and it survives a restart
+12. **Pure Black** is a true `#000` — sidebar and editor are the same black, and the lock screen
+    has no coloured bloom
+13. Toolbar image icon inserts a picture at the caret, selected, on its own line
+14. Clicking an image shows the outline, four corner handles and the layout bubble
+15. Dragging an image shows a blue drop caret and moves it through the text; "behind"/"front"
     images follow the pointer freely
-12. Corner handles resize; the percentage in the bubble tracks the drag
-13. A "behind text" image stays visible with text drawn over it (not swallowed by the background)
-14. Layout, size and position survive switching entries and restarting the app
+16. Corner handles resize; the percentage in the bubble tracks the drag
+17. A "behind text" image stays visible with text drawn over it (not swallowed by the background)
+18. Layout, size and position survive switching entries and restarting the app
 
 > The full per-behaviour checklist lives in `../windows-app/AGENT-IMAGE-PLACEMENT-UPDATE.md` — the
 > Linux app should pass it identically.

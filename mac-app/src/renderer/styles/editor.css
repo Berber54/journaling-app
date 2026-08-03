@@ -497,7 +497,7 @@ figure.doc-image[data-layout='front'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-scrim);
   backdrop-filter: blur(4px);
 }
 

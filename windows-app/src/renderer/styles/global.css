@@ -1,6 +1,13 @@
-/* ─── CSS Variables (Design System — dark, dark-blue, sharp) ─── */
-:root {
-  /* Deep dark-blue / navy surfaces for comfortable night writing */
+/* ─── Colour themes ─────────────────────────────────────────────
+   Every surface colour in the app comes from these variables. A theme is one
+   block of overrides selected by `data-theme` on <html>, which the renderer
+   stamps from the saved setting (hooks/useTheme.ts, shared/themes.ts). No
+   attribute = Midnight, so the app looks right before the setting is read.
+   Adding a theme = a block here + an entry in shared/themes.ts.            */
+
+/* Midnight (default) — deep dark-blue / navy, for comfortable night writing */
+:root,
+:root[data-theme='midnight'] {
   --bg-primary: #060a15;
   --bg-secondary: #0a1120;
   --bg-tertiary: #0f1a2e;
@@ -12,13 +19,139 @@
   --accent-secondary: #2f5bd0;
   --accent-gradient: linear-gradient(135deg, #3f6fd6 0%, #2f5bd0 100%);
   --accent-glow: rgba(63, 111, 214, 0.4);
-  --danger: #e0596a;
-  --success: #35b57e;
-  --warning: #d6a24a;
   /* Cool blue-tinted hairlines */
   --border-subtle: rgba(120, 150, 220, 0.09);
   --border-default: rgba(120, 150, 220, 0.16);
   --border-strong: rgba(120, 150, 220, 0.3);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
+  --overlay-scrim: rgba(0, 0, 0, 0.5);
+  --lock-scrim: rgba(6, 10, 21, 0.94);
+  --lock-glow: rgba(63, 111, 214, 0.12);
+}
+
+/* Pure Black — true #000, no tint. Sidebar and canvas are the same black;
+   the hairline between them is the only separation, which is the point. */
+:root[data-theme='black'] {
+  --bg-primary: #000000;
+  --bg-secondary: #000000;
+  --bg-tertiary: #0d0d0d;
+  --bg-elevated: #171717;
+  --text-primary: #ededed;
+  --text-secondary: #9b9b9b;
+  --text-muted: #666666;
+  --accent-primary: #5c5c5c;
+  --accent-secondary: #757575;
+  --accent-gradient: linear-gradient(135deg, #5c5c5c 0%, #2e2e2e 100%);
+  --accent-glow: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.28);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+  --overlay-scrim: rgba(0, 0, 0, 0.66);
+  --lock-scrim: rgba(0, 0, 0, 0.96);
+  --lock-glow: transparent; /* no coloured bloom — it would break the black */
+}
+
+/* Graphite — neutral charcoal with a teal accent */
+:root[data-theme='graphite'] {
+  --bg-primary: #101011;
+  --bg-secondary: #17171a;
+  --bg-tertiary: #202024;
+  --bg-elevated: #2a2a30;
+  --text-primary: #e7e7ea;
+  --text-secondary: #a0a0aa;
+  --text-muted: #6d6d78;
+  --accent-primary: #2f8f7d;
+  --accent-secondary: #24756a;
+  --accent-gradient: linear-gradient(135deg, #2f8f7d 0%, #24756a 100%);
+  --accent-glow: rgba(47, 143, 125, 0.38);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
+  --lock-scrim: rgba(16, 16, 17, 0.95);
+  --lock-glow: rgba(47, 143, 125, 0.1);
+}
+
+/* Evergreen — forest green, low glare */
+:root[data-theme='evergreen'] {
+  --bg-primary: #060f0b;
+  --bg-secondary: #0a1712;
+  --bg-tertiary: #10231b;
+  --bg-elevated: #173026;
+  --text-primary: #dcecdf;
+  --text-secondary: #8ba896;
+  --text-muted: #55705f;
+  --accent-primary: #2f9e63;
+  --accent-secondary: #23804f;
+  --accent-gradient: linear-gradient(135deg, #2f9e63 0%, #23804f 100%);
+  --accent-glow: rgba(47, 158, 99, 0.38);
+  --border-subtle: rgba(130, 220, 170, 0.09);
+  --border-default: rgba(130, 220, 170, 0.16);
+  --border-strong: rgba(130, 220, 170, 0.3);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
+  --overlay-scrim: rgba(0, 0, 0, 0.5);
+  --lock-scrim: rgba(6, 15, 11, 0.94);
+  --lock-glow: rgba(47, 158, 99, 0.12);
+}
+
+/* Plum — dark violet */
+:root[data-theme='plum'] {
+  --bg-primary: #0b0714;
+  --bg-secondary: #120c1f;
+  --bg-tertiary: #1b1230;
+  --bg-elevated: #271a42;
+  --text-primary: #e7dcf6;
+  --text-secondary: #a294bd;
+  --text-muted: #6b5f85;
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #7440e0;
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #7440e0 100%);
+  --accent-glow: rgba(139, 92, 246, 0.4);
+  --border-subtle: rgba(190, 160, 240, 0.1);
+  --border-default: rgba(190, 160, 240, 0.17);
+  --border-strong: rgba(190, 160, 240, 0.3);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.11);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
+  --lock-scrim: rgba(11, 7, 20, 0.94);
+  --lock-glow: rgba(139, 92, 246, 0.14);
+}
+
+/* Ember — warm sepia with burnt orange */
+:root[data-theme='ember'] {
+  --bg-primary: #100a06;
+  --bg-secondary: #18110b;
+  --bg-tertiary: #221810;
+  --bg-elevated: #302117;
+  --text-primary: #f1e4d7;
+  --text-secondary: #b39c86;
+  --text-muted: #7b6754;
+  --accent-primary: #c2603a;
+  --accent-secondary: #a44a2a;
+  --accent-gradient: linear-gradient(135deg, #c2603a 0%, #a44a2a 100%);
+  --accent-glow: rgba(194, 96, 58, 0.4);
+  --border-subtle: rgba(235, 190, 150, 0.09);
+  --border-default: rgba(235, 190, 150, 0.16);
+  --border-strong: rgba(235, 190, 150, 0.3);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.11);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
+  --lock-scrim: rgba(16, 10, 6, 0.94);
+  --lock-glow: rgba(194, 96, 58, 0.14);
+}
+
+/* ─── Theme-independent tokens (shape, type, motion, status) ─── */
+:root {
+  /* Status colours mean the same thing in every theme, so they don't move */
+  --danger: #e0596a;
+  --success: #35b57e;
+  --warning: #d6a24a;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.7);
@@ -71,13 +204,13 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 0;
   border: 2px solid var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ─── Selection ─────────────────────────────────────────────── */
@@ -263,4 +396,75 @@ html, body {
 .toggle.on .toggle-knob {
   transform: translateX(20px);
   background: #ffffff;
+}
+
+/* ─── Theme picker (Settings → Appearance) ──────────────────── */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.theme-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.theme-card.active {
+  border-color: var(--accent-primary);
+  box-shadow: inset 0 0 0 1px var(--accent-primary);
+}
+
+/* The swatch paints the theme's own colours, not the active theme's — that is
+   how a card previews a palette you haven't switched to yet. */
+.theme-swatch {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-default);
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  overflow: hidden;
+}
+
+.theme-swatch-surface,
+.theme-swatch-accent {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.theme-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.theme-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
 }

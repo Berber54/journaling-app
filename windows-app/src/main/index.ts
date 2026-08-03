@@ -3,8 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipcHandlers.js';
 import { startNetworkMonitor, stopNetworkMonitor } from './networkMonitor.js';
-import { closeDatabase } from './database.js';
+import { closeDatabase, getConfig } from './database.js';
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from './mediaProtocol.js';
+import { THEME_SETTING_KEY, themeBackground } from '../shared/themes.js';
 
 // Has to happen before the app is ready, so it sits at module scope.
 protocol.registerSchemesAsPrivileged([MEDIA_SCHEME_PRIVILEGES]);
@@ -25,7 +26,9 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     frame: true,
-    backgroundColor: '#0f0f14',
+    // The saved theme's --bg-primary, so the window opens in the colour the UI
+    // is about to paint instead of flashing another theme's background.
+    backgroundColor: themeBackground(getConfig(THEME_SETTING_KEY)),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
       contextIsolation: true,

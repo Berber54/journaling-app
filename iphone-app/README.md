@@ -17,7 +17,43 @@
 - Manual date override for journal entries
 - Journal export — write out all entries or a chosen few as Markdown / plain text / JSON files, so they can be handed to an external AI tool or any other app (see below)
 - Rich text with **placed images** — see below
+- **Entry list without previews** and **colour themes** — see below
 - Push notification support for sync conflicts (stretch goal)
+
+## Entry List and Themes
+
+Two desktop behaviours that the phone has to match in spirit rather than pixel-for-pixel.
+
+**The entry list shows title and date only.** No snippet of the entry body, anywhere — not in the
+list, not in a widget, not in a notification. The desktop apps removed content previews deliberately:
+the list is on screen while you write, and yesterday's words shouldn't be. Follow the same rule.
+
+The desktop's *collapsible* sidebar has no direct iPhone equivalent — on a phone the list is already
+a separate screen. The requirement it encodes is that **the writing surface can be the whole
+screen**: no persistent list rail, and nothing that reserves horizontal space next to the editor. On
+iPad, where a split view does show both, port the collapse behaviour properly: a toggle in the entry
+screen's header, collapsing to an icon rail that still offers new-entry, export and settings, plus
+the sync dot.
+
+**Themes.** Six dark palettes ship on desktop: `midnight` (default), `black` (true `#000`, for
+OLED — and the one that matters most on a phone), `graphite`, `evergreen`, `plum`, `ember`. Port
+them from **`windows-app/src/shared/themes.ts`** (ids, labels) and the `:root[data-theme='…']`
+blocks in `windows-app/src/renderer/styles/global.css` (the actual values) — matching ids and
+colours, so a user switching between phone and laptop sees the same journal.
+
+Requirements:
+- **A picker in Settings**, mirroring the desktop's Appearance section: a swatch per theme, applied
+  immediately.
+- **Local, not synced.** The desktop stores the choice in `app_config` under `theme` and never puts
+  it in the sync payload (`../ARCHITECTURE.md` §4.2, §14). Store it in `UserDefaults` and do the
+  same — a phone set to Pure Black must not repaint the desktop.
+- **Every surface from the palette.** Define the colours once (a SwiftUI `Environment` value or an
+  asset catalogue per theme) and never hard-code a background in a view — the same rule that makes
+  the desktop themes a variable swap instead of a rewrite.
+- **Pure Black means `#000`.** No elevated-grey cards, no tinted overlays; the lock screen loses its
+  coloured glow in that theme too.
+- **The launch screen follows the theme**, the way the desktop paints the window's `backgroundColor`
+  before the UI loads, so a black install never flashes navy.
 
 ## Placed Images
 
