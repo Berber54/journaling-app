@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:renderer": "vite",
-    "dev:main": "tsc -p tsconfig.main.json && electron .",
+    "dev:main": "tsc -p tsconfig.main.json && electron . --dev",
     "build": "tsc -p tsconfig.main.json && vite build",
     "package": "npm run build && electron-builder --win",
     "start": "electron ."
@@ -33,5 +33,11 @@
     "@types/uuid": "^10.0.0",
     "@types/bcrypt": "^5.0.0",
     "concurrently": "^9.1.0"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "better-sqlite3@11.10.0": true,
+    "electron@33.4.11": true,
+    "esbuild@0.25.12": true
   }
 }
